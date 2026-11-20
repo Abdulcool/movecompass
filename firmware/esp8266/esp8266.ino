@@ -62,6 +62,18 @@ bool parseBackend() {
   backendHost = host; return true;
 }
 
+bool validDeviceKey(const String &key) {
+  if (key.length() == 64) {
+    for (unsigned int i = 0; i < key.length(); i++) if (!isxdigit(key[i])) return false;
+    return true;
+  }
+  if (!key.startsWith("mc1.") || key.length() > 1024) return false;
+  const int separator = key.indexOf('.', 4);
+  if (separator <= 4 || key.length() - separator - 1 != 43) return false;
+  for (unsigned int i = 4; i < key.length(); i++) if (i != static_cast<unsigned int>(separator) && !isalnum(key[i]) && key[i] != '_' && key[i] != '-') return false;
+  return true;
+}
+
 bool loadConfig() {
   File file = LittleFS.open("/config.json", "r");
   if (!file || file.size() > 2048) return false;
@@ -70,7 +82,7 @@ bool loadConfig() {
   backendUrl = doc["backend"] | DEFAULT_BACKEND_URL;
   deviceId = doc["deviceId"] | ""; deviceKey = doc["key"] | ""; patientId = doc["patientId"] | "";
   wifiSsid = doc["ssid"] | ""; wifiPassword = doc["password"] | "";
-  return parseBackend() && deviceId.length() && deviceKey.length() >= 32 && deviceKey.length() <= 1024 && patientId.length() && wifiSsid.length();
+  return parseBackend() && deviceId.length() && validDeviceKey(deviceKey) && patientId.length() && wifiSsid.length();
 }
 
 bool saveConfig() {
@@ -97,7 +109,7 @@ int credentialRequest(const char *path, const String &body) {
   JsonDocument doc;
   if (deserializeJson(doc, response)) return -1;
   const String nextId = doc["deviceId"] | "", nextKey = doc["key"] | "", nextPatient = doc["patientId"] | "";
-  if (!nextId.length() || nextKey.length() < 32 || nextKey.length() > 1024 || !nextPatient.length()) return -1;
+  if (!nextId.length() || !validDeviceKey(nextKey) || !nextPatient.length()) return -1;
   if (patientId.length() && patientId != nextPatient) {
     lastSeq = 0; hasCursor = false; alerting = false; alertCount = 0; alertHead = 0; activeId = ""; activeSeq = 0;
     for (String &id : recentEvents) id = "";
@@ -145,7 +157,7 @@ void configurePortal() {
     if (!manager.startConfigPortal("MoveCompass-Setup") || WiFi.status() != WL_CONNECTED) continue;
     backendUrl = server.getValue();
     const String pairing = code.getValue();
-    const bool keep = !pairing.length() && deviceKey.length() == 64 && previousBackend == backendUrl;
+    const bool keep = !pairing.length() && validDeviceKey(deviceKey) && previousBackend == backendUrl;
     if (!parseBackend() || (!keep && !pairDevice(pairing))) { Serial.println("Pairing failed: check server address and request a fresh code"); continue; }
     wifiSsid = WiFi.SSID(); wifiPassword = WiFi.psk();
     if (!saveConfig()) { Serial.println("Could not save setup; request a fresh pairing code and try again"); continue; }

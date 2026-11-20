@@ -15,8 +15,12 @@ export async function pairWithCode({backendUrl,code,insecureTls=false}) {
       res.on('end',()=>{if(res.statusCode!==200){reject(new Error(`Pairing failed (HTTP ${res.statusCode}); request a fresh code`));return;}try{resolve(JSON.parse(text));}catch{reject(new Error('Invalid pairing response'));}});
     });req.on('error',reject);req.setTimeout(12000,()=>req.destroy(new Error('Pairing timed out')));req.end(body);
   });
-  if(typeof data.deviceId!=='string'||typeof data.patientId!=='string'||!/^\w{64}$/.test(data.key||''))throw new Error('Invalid device credentials');
+  if(typeof data.deviceId!=='string'||!data.deviceId||typeof data.patientId!=='string'||!data.patientId||!validDeviceKey(data.key))throw new Error('Invalid device credentials');
   return {deviceId:data.deviceId,deviceKey:data.key,patientId:data.patientId};
+}
+
+export function validDeviceKey(key) {
+  return typeof key==='string'&&key.length<=1024&&(/^[a-f\d]{64}$/i.test(key)||/^mc1\.[A-Za-z\d_-]+\.[A-Za-z\d_-]{43}$/.test(key));
 }
 
 export function completionForPatient(raw, patientId, seen = new Set()) {

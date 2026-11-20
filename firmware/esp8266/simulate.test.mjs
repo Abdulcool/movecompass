@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { completionForPatient, createVirtualEsp } from './simulate.mjs';
+import { completionForPatient, createVirtualEsp,validDeviceKey } from './simulate.mjs';
 
 const event = { id: 'event-1', type: 'exercise_completed', patientId: 'jane-id', exerciseName: 'Supported sit-to-stand', reps: 6 };
 const message = value => JSON.stringify({ kind: 'event', event: value });
+test('accepts hex and signed credentials but rejects empty, malformed and oversized keys',()=>{
+  for(const key of ['a'.repeat(64),'mc1.eyJkZXZpY2VJZCI6IjEifQ.'+'a'.repeat(43)])assert.equal(validDeviceKey(key),true);
+  for(const key of ['',null,'z'.repeat(64),'mc1..'+'a'.repeat(43),'mc1.payload.bad','mc1.'+'a'.repeat(1024)+'.'+'a'.repeat(43)])assert.equal(validDeviceKey(key),false);
+});
 test('rejects missing configuration and unsupported backend schemes', () => {
   assert.throws(() => createVirtualEsp({}), /required/);
   assert.throws(() => createVirtualEsp({ backendUrl: 'ftp://localhost', deviceId: 'id', deviceKey: 'test', patientId: 'jane-id' }), /HTTP/);
