@@ -39,6 +39,7 @@ export default function Track() {
     angles: Record<string, number> = {},
   ) {
     if (saving.current) return;
+    if (!Number.isInteger(count) || count < 1 || count > 100) { setMessage('Complete at least one rep before saving.'); return; }
     saving.current = true;
     setBusy(true);
     try {
@@ -102,7 +103,7 @@ export default function Track() {
           )}
           <Button
             title={saved ? "Session saved" : "Finish and save"}
-            disabled={busy || saved}
+            disabled={busy || saved || reps < 1}
             onPress={() => void save(reps, "camera")}
           />
         </>
