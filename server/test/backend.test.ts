@@ -241,7 +241,7 @@ it('serves health, static files, SPA routes and JSON API errors',async()=>{
   expect(huge.status).toBe(413);expect(huge.body.errors).toEqual(['Request too large']);
   const web=join(dir,'web');mkdirSync(web);writeFileSync(join(web,'index.html'),'<h1>MoveCompass</h1>');writeFileSync(join(web,'tracker.html'),'tracker');
   await backend.close();backend=createBackend({dataDir:dir,webDist:web});
-  expect((await request(backend.app).get('/healthz')).body).toEqual({ok:true});
+  expect((await request(backend.app).get('/healthz')).body).toEqual({ok:true,ephemeral:false});
   expect((await request(backend.app).get('/plan')).text).toContain('MoveCompass');
   expect((await request(backend.app).get('/tracker.html')).text).toBe('tracker');
   expect((await request(backend.app).get('/missing.js')).status).toBe(404);
