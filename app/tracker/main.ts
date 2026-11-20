@@ -28,6 +28,7 @@ let lastEmit = 0;
 let pose: ReturnType<typeof createDetector> | undefined,
   stream: MediaStream | undefined,
   raf = 0,
+  videoFrame = 0,
   stopped = false,
   completed = false;
 let generation = 0,
@@ -55,6 +56,7 @@ function stop(release=true) {
   stopped = true;
   generation++;
   cancelAnimationFrame(raf);
+  if(video.cancelVideoFrameCallback)video.cancelVideoFrameCallback(videoFrame);
   stream?.getTracks().forEach((track) => track.stop());
   stream = undefined;
   if(release){pose?.close();pose=undefined;preparing=undefined;}
@@ -139,7 +141,11 @@ async function start() {
       if(x>=0&&x<=1&&y>=0&&y<=1&&selector.choose(currentPeople,{x,y})){tracker.reset();progress.begin();}
     };
     const input=document.createElement('canvas'),inputContext=input.getContext('2d',{alpha:false,willReadFrequently:true})!;
-    let nextInferenceAt=0,averageCost=0;
+    let nextInferenceAt=0,averageCost=0,lastDrawing='';
+    function schedule(){
+      if(video.requestVideoFrameCallback)videoFrame=video.requestVideoFrameCallback(()=>void frame());
+      else raf=requestAnimationFrame(()=>void frame());
+    }
     async function frame() {
       if (stopped || run !== generation || !pose) return;
       try {
@@ -150,21 +156,20 @@ async function start() {
           if(input.width!==inputWidth||input.height!==inputHeight){input.width=inputWidth;input.height=inputHeight;}
           inputContext.drawImage(video,0,0,inputWidth,inputHeight);
           const pixels=inputContext.getImageData(0,0,inputWidth,inputHeight),lighting=enhanceDimFrame(pixels.data);
-          if(lighting.enhanced)inputContext.putImageData(pixels,0,0);
           const result = await pose.detect(pixels, timestampMs);
           if(stopped||run!==generation)return;
           el('download-progress').setAttribute('value','100');el('download').hidden=true;el('download-progress').hidden=true;
           currentPeople=result.landmarks;
           const selected=selector.update(result.landmarks),index=selected.index;
           el('selection').hidden=!selected.needsSelection;
-          const choices=el('people');choices.replaceChildren();
+          const choices=el('people');if(selected.needsSelection||choices.hasChildNodes())choices.replaceChildren();
           if(selected.needsSelection)for(const person of selected.people){
             const button=document.createElement('button');button.textContent=`Person ${person.index+1}`;
             button.onclick=()=>{selector.choose(currentPeople,person);tracker.reset();progress.begin();};choices.append(button);
           }
           const inferenceMs=performance.now()-timestampMs;
           averageCost=averageCost?averageCost*.8+inferenceMs*.2:inferenceMs;
-          nextInferenceAt=performance.now()+Math.max(16,Math.min(60,averageCost*.2));
+          nextInferenceAt=timestampMs+Math.max(1000/30,averageCost);
           const output = tracker.update({
             landmarks: index===null?[]:result.landmarks[index],
             worldLandmarks: index===null?[]:result.worldLandmarks[index],
@@ -180,6 +185,9 @@ async function start() {
           if(canvas.width!==overlayWidth||canvas.height!==overlayHeight){canvas.width=overlayWidth;canvas.height=overlayHeight;}
           const x = (n: number) => (1 - n) * canvas.width,
             y = (n: number) => n * canvas.height;
+          const drawing=JSON.stringify([canvas.width,canvas.height,points.map(p=>visible(p)?[Math.round(p.x*canvas.width),Math.round(p.y*canvas.height)]:null),keys.map(key=>output.angles[key]===null?null:Math.round(output.angles[key]!))]);
+          if(drawing!==lastDrawing){
+          lastDrawing=drawing;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.lineWidth = 3;
           ctx.strokeStyle = "#9FD8BE";
@@ -228,6 +236,7 @@ async function start() {
               ctx.fillText(label, left, top);
             }
           }
+          }
           const countLabel=`${current.reps} / ${target}`;
           if(el('counter').textContent!==countLabel)el('counter').textContent=countLabel;
           if(el('phase').textContent!==output.phase)el('phase').textContent=output.phase;
@@ -264,12 +273,12 @@ async function start() {
             return;
           }
         }
-        raf = requestAnimationFrame(frame);
+        schedule();
       } catch (error) {
         if(run===generation)fail(error);
       }
     }
-    raf = requestAnimationFrame(frame);
+    schedule();
   } catch (error) {
     if (run === generation) fail(error);
   }
