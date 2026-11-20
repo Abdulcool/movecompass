@@ -222,6 +222,19 @@ describe('tracker integration', () => {
     }
     expect(result!.reps).toBe(1);
   });
+  it('waits for a still calf calibration window after initial movement',()=>{
+    const tracker=createTracker('calf-raise');let r;
+    for(let i=0;i<16;i++) {
+      const p=points();p[27].y-=i%2?.08:0;p[28].y-=i%2?.08:0;
+      r=tracker.update(sample(p,i*100));expect(r.metric).toBeNull();
+    }
+    for(let i=16;i<40;i++)r=tracker.update(sample(points(),i*100));
+    expect(r!.metric).not.toBeNull();
+    for(let i=40;i<72;i++) {
+      const p=points();p[27].y-=i<56?.03:0;p[28].y-=i<56?.03:0;r=tracker.update(sample(p,i*100));
+    }
+    expect(r!.reps).toBe(1);
+  });
   it('does not invent angles or reps for invisible frames or invalid geometry', () => {
     const t=createTracker('sit-to-stand'); const p=points().map(v=>({...v,visibility:0}));
     const r=t.update(sample(p,0));

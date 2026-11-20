@@ -41,8 +41,13 @@ export function createTracker(exerciseId: string) {
       if (exercise.tracking.mode === 'baseline' && metric !== null) {
         if (baseline === null) {
           if (time - validTime > 500) calibration = [];
-          calibration.push({time, value: metric});
-          if (time - calibration[0].time >= 1000) {
+          const raw = extractAngles(frame);
+          const value = exercise.tracking.metric(raw.angles, flatten(frame.landmarks), frame.width, frame.height, raw.confidence);
+          calibration = calibration.filter(s => time - s.time <= 1200);
+          if (value !== null) calibration.push({time, value});
+          const mean = calibration.reduce((sum,s)=>sum+s.value,0)/calibration.length;
+          const variance = calibration.reduce((sum,s)=>sum+(s.value-mean)**2,0)/calibration.length;
+          if (calibration.length >= 10 && time - calibration[0].time >= 1000 && variance <= .000025) {
             const values = calibration.map(s => s.value).sort((a, b) => a - b);
             baseline = values.length % 2 ? values[Math.floor(values.length / 2)] : (values[values.length / 2 - 1] + values[values.length / 2]) / 2;
           }
