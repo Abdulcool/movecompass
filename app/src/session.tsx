@@ -385,8 +385,8 @@ export function SessionProvider({ children }: React.PropsWithChildren) {
           <Text style={{ color: "white", fontWeight: "600" }}>
             {state.toast}
           </Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss current update" onPress={()=>state.setToast('')}><Text style={{ color: "white", fontSize: 12, marginTop: 6 }}>
-            Tap for next update · {state.toastCount} {state.toastCount===1?'update':'updates'} waiting
+          <Pressable accessibilityRole="button" onPress={()=>state.setToast('')}><Text style={{ color: "white", fontSize: 12, marginTop: 6 }}>
+            Dismiss current update · {state.toastCount} {state.toastCount===1?'update':'updates'} waiting
           </Text></Pressable>
         </View>
       )}
