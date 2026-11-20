@@ -5,8 +5,9 @@ export interface PendingSet {
   source: 'manual' | 'camera'; angles: Record<string,number>; completedAt: string;
 }
 let serial: Promise<unknown> = Promise.resolve();
-function exclusive<T>(work:()=>Promise<T>) {
-  const result=serial.catch(()=>{}).then(work);serial=result;return result;
+function exclusive<T>(key:string,work:()=>Promise<T>) {
+  const run=()=>typeof navigator!=='undefined'&&navigator.locks?navigator.locks.request(key,work):work();
+  const result=serial.catch(()=>{}).then(run);serial=result;return result;
 }
 export function outboxKey(base: string, userId: string) {return `mc-outbox:${base}:${userId}`;}
 async function read(key:string):Promise<PendingSet[]> {
@@ -15,13 +16,13 @@ async function read(key:string):Promise<PendingSet[]> {
   return data;
 }
 export function enqueueSet(key:string,item:PendingSet) {
-  return exclusive(async()=>{const items=await read(key);if(!items.some(i=>i.clientId===item.clientId))items.push(item);await AsyncStorage.setItem(key,JSON.stringify(items));return items.length;});
+  return exclusive(key,async()=>{const items=await read(key);if(!items.some(i=>i.clientId===item.clientId))items.push(item);await AsyncStorage.setItem(key,JSON.stringify(items));return items.length;});
 }
 export function flushSets(key:string,post:(item:PendingSet)=>Promise<{event:Event}>) {
-  return exclusive(async()=>{
-    const items=await read(key), sent:Event[]=[];
+  return exclusive(key,async()=>{
+    let items=await read(key);const sent:Event[]=[];
     while(items.length) {
-      try {const {event}=await post(items[0]);sent.push(event);items.shift();await AsyncStorage.setItem(key,JSON.stringify(items));}
+      try {const item=items[0],{event}=await post(item);sent.push(event);items=(await read(key)).filter(i=>i.clientId!==item.clientId);await AsyncStorage.setItem(key,JSON.stringify(items));}
       catch(error) {
         if(error instanceof ApiError)return {sent,pending:items.length,error};
         throw error;
