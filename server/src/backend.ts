@@ -22,6 +22,7 @@ export interface CompletionEvent {
   angles: Record<string, number>;
 }
 interface Options {
+  seedDemo?: boolean;
   dataDir?: string; webDist?: string; jwtSecret?: string; allowUnregisteredDevices?: boolean;
   sendPush?: (messages: ExpoPushMessage[]) => Promise<void>;
 }
@@ -63,8 +64,16 @@ export function createBackend(options: Options = {}) {
   `);
   const byEmail = (value: string) => db.prepare('SELECT * FROM users WHERE email = ?').get(value.toLowerCase()) as User | undefined;
   const byId = (value: string) => db.prepare('SELECT * FROM users WHERE id = ?').get(value) as User | undefined;
-  for (const [address, name, role] of [['janedoe@gmail.com', 'Jane Doe', 'patient'], ['staff@cccare.ca', 'CCCARE Staff', 'staff']] as const) {
-    if (!byEmail(address)) db.prepare('INSERT INTO users VALUES (?, ?, ?, ?, ?)').run(randomUUID(), address, name, role, bcrypt.hashSync('123', 10));
+  const publicPasswords = [process.env.DEMO_PATIENT_PASSWORD, process.env.DEMO_STAFF_PASSWORD];
+  const publicSeed = publicPasswords.some(Boolean);
+  if (publicSeed && publicPasswords.some(p => !p || Buffer.byteLength(p) < 8 || Buffer.byteLength(p) > 72)) throw new Error('Both demo passwords must contain 8–72 bytes');
+  if ((options.seedDemo ?? process.env.SEED_DEMO === '1') || publicSeed) {
+    for (const [i, [address, name, role]] of ([['janedoe@gmail.com', 'Jane Doe', 'patient'], ['staff@cccare.ca', 'CCCARE Staff', 'staff']] as const).entries()) {
+      const password = publicSeed ? publicPasswords[i]! : '123';
+      const existing = byEmail(address);
+      if (!existing) db.prepare('INSERT INTO users VALUES (?, ?, ?, ?, ?)').run(randomUUID(), address, name, role, bcrypt.hashSync(password, 10));
+      else if (publicSeed && !bcrypt.compareSync(password, existing.password_hash)) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), existing.id);
+    }
   }
   const deviceById = (id: string) => db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as Device | undefined;
   const tokenFor = (u: User, role: Role) => jwt.sign({role}, secret, {subject: u.id, expiresIn: '7d', issuer: 'movecompass', audience: 'movecompass-app'});

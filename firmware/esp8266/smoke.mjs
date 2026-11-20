@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createBackend } from '../../server/src/backend.ts';
 import { createVirtualEsp } from './simulate.mjs';
 
-const backend = createBackend({ dataDir: await mkdtemp(join(homedir(), 'work', 'esp8266-smoke-')), sendPush: async () => {} });
+const backend = createBackend({ seedDemo: true, dataDir: await mkdtemp(join(homedir(), 'work', 'esp8266-smoke-')), sendPush: async () => {} });
 await new Promise(resolve => backend.server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${backend.server.address().port}`;
 let sim;

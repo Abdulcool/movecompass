@@ -15,5 +15,9 @@ services:
         value: /workspace/app/dist
       - key: JWT_SECRET
         generateValue: true
+      - key: DEMO_PATIENT_PASSWORD
+        generateValue: true
+      - key: DEMO_STAFF_PASSWORD
+        generateValue: true
       - key: ALLOW_UNREGISTERED_DEVICES
         value: "false"

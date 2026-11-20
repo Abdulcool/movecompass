@@ -36,7 +36,7 @@ function message(socket: WebSocket, kind: string): Promise<any> {
 }
 beforeEach(async () => {
   dir=mkdtempSync(join(tmpdir(),'movecompass-test-')); push=[]; sockets=[];
-  backend=createBackend({dataDir:dir, sendPush:async messages=>{push.push(messages);}});
+  backend=createBackend({dataDir:dir, seedDemo:true, sendPush:async messages=>{push.push(messages);}});
   backend.server.listen(0,'127.0.0.1'); await once(backend.server,'listening');
 });
 afterEach(async()=>{for(const s of sockets)s.terminate();await backend.close();rmSync(dir,{recursive:true,force:true});});

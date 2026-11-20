@@ -6,8 +6,12 @@ Bearer auth is `Authorization: Bearer <token>`. Tokens expire after seven days.
 
 ## Accounts
 
-Seed patients: Jane Doe `janedoe@gmail.com` / `123`.
-Seed staff: `staff@cccare.ca` / `123`. Jane may choose either role for the demo.
+No accounts are seeded by default. Set `SEED_DEMO=1` only for a private preview:
+Jane Doe `janedoe@gmail.com` / `123` (patient) and `staff@cccare.ca` / `123` (staff).
+Jane cannot select the staff role. For public deploys, set both
+`DEMO_PATIENT_PASSWORD` and `DEMO_STAFF_PASSWORD` to independent random secrets
+(8–72 bytes). Render generates these values and does not set `SEED_DEMO`.
+These secrets replace existing demo-account passwords when configured.
 Other users cannot select a role not assigned to their account. Public registration
 only creates patients; it cannot create staff. This is a deliberate security boundary.
 
