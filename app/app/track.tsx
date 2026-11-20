@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Text } from "react-native";
+import { Text, TextInput } from "react-native";
 import { Image } from "expo-image";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { exercises } from "@movecompass/pose";
@@ -17,6 +17,8 @@ export default function Track() {
     [message, setMessage] = useState(""),
     [saved, setSaved] = useState(false),
     [busy, setBusy] = useState(false);
+  const [manualCount, setManualCount] = useState('');
+  const [manualOpen, setManualOpen] = useState(false);
   const saving = useRef(false);
   if (!session.ready)
     return (
@@ -112,8 +114,9 @@ export default function Track() {
         title="Complete manually without camera"
         disabled={busy || saved}
         secondary
-        onPress={() => void save(exercise.reps, "manual")}
+        onPress={() => { if(reps>0)void save(reps, "manual");else {setManualCount(String(exercise.reps));setManualOpen(true);} }}
       />
+      {manualOpen && !saved && <Card><Copy>How many reps did you complete?</Copy><TextInput accessibilityLabel="Reps completed" keyboardType="number-pad" value={manualCount} onChangeText={setManualCount} style={s.input}/><Button title={`Save ${manualCount || '0'} reps manually`} disabled={busy || !/^\d+$/.test(manualCount) || Number(manualCount)<1 || Number(manualCount)>100} onPress={()=>void save(Number(manualCount),'manual')}/></Card>}
       {!!message && <Copy>{message}</Copy>}
     </Page>
   );
