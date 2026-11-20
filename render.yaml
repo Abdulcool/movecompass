@@ -23,3 +23,5 @@ services:
         value: "false"
       - key: TRUST_PROXY
         value: "1"
+      - key: DEMO_EPHEMERAL
+        value: "1"

@@ -26,6 +26,7 @@ export interface CompletionEvent {
   seq?: number;
 }
 interface Options {
+  ephemeral?:boolean;
   seedDemo?: boolean;
   devicePairingSecret?:string;
   trustProxy?:number;
@@ -229,7 +230,7 @@ export function createBackend(options: Options = {}) {
     return event;
   };
   const touch = (id: string) => db.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').run(new Date().toISOString(), id);
-  app.get('/healthz', (_req, res) => { db.prepare('SELECT 1').get(); res.json({ok: true}); });
+  app.get('/healthz', (_req, res) => { db.prepare('SELECT 1').get(); res.json({ok: true,ephemeral:options.ephemeral??process.env.DEMO_EPHEMERAL==='1'}); });
   app.post('/api/auth/register', async (req, res) => {
     const b = req.body;
     if (!object(b) || !email(b.email) || !text(b.name) || typeof b.password !== 'string' || Array.from(b.password).length < 8 || Buffer.byteLength(b.password) > 72 || (b.role !== undefined && b.role !== 'patient')) {
