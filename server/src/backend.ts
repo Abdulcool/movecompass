@@ -137,10 +137,16 @@ export function createBackend(options: Options = {}) {
   const throttle = (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now();
     for (const [key, value] of attempts) if (value.expires <= now) attempts.delete(key);
-    const key = `${req.originalUrl.split('?')[0].toLowerCase().replace(/\/+$/, '')}:${req.ip}`;
+    const path=req.originalUrl.split('?')[0].toLowerCase().replace(/\/+$/, '');
+    const login=path==='/api/auth/login',address=`${path}:${req.ip}`;
+    const emailKey=object(req.body)&&typeof req.body.email==='string'?req.body.email.trim().toLowerCase():'<invalid>';
+    const key = login?`${address}:${emailKey}`:address;
     const bucket = attempts.get(key) ?? {count: 0, expires: now + 60000};
     attempts.set(key, bucket);
-    if (++bucket.count > 10) { res.set('Retry-After', String(Math.ceil((bucket.expires - now) / 1000))).status(429).json({error: 'Too many attempts. Please wait a minute and try again.'}); return; }
+    const ipBucket=attempts.get(address)??{count:0,expires:now+60000};
+    if(login)attempts.set(address,ipBucket);
+    if (login?bucket.count>=10||ipBucket.count>=100:++bucket.count>10) { res.set('Retry-After', String(Math.ceil(((login&&ipBucket.count>=100?ipBucket:bucket).expires - now) / 1000))).status(429).json({error: 'Too many attempts. Please wait a minute and try again.'}); return; }
+    if(login)res.once('finish',()=>{if(res.statusCode>=400){bucket.count++;ipBucket.count++;}});
     next();
   };
   app.use(['/api/auth/login', '/api/auth/register', '/api/devices/pair', '/api/devices/recover'], throttle);
