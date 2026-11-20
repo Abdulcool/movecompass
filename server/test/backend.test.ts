@@ -73,6 +73,7 @@ describe('auth and isolation',()=>{
 });
 describe('completion contract and storage',()=>{
   it('validates missing/wrong fields with 400 and accepts legacy PDF event with 202',async()=>{
+    await backend.close();backend=createBackend({dataDir:dir,allowUnregisteredDevices:true});
     const staff=await login('staff');
     expect((await request(backend.app).get('/api/esp32/latest')).status).toBe(401);
     expect((await request(backend.app).get('/api/esp32/latest').auth(staff,{type:'bearer'})).body).toEqual({event:null});
@@ -100,6 +101,7 @@ describe('completion contract and storage',()=>{
   });
   it('rejects missing/bad registered keys and disabled legacy events',async()=>{
     const token=await login('staff');const d=await device(token);
+    expect((await request(backend.app).post('/api/esp32/notify').send(payload)).status).toBe(401);
     for(const key of ['', 'bad-key']) expect((await request(backend.app).post('/api/esp32/notify').set('X-Device-Key',key).send({...payload,deviceId:d.deviceId})).status).toBe(401);
     await backend.close();backend=createBackend({dataDir:dir,allowUnregisteredDevices:false});
     expect((await request(backend.app).post('/api/esp32/notify').send(payload)).status).toBe(401);

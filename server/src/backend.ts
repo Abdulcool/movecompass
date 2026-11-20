@@ -51,7 +51,7 @@ export function createBackend(options: Options = {}) {
     secret = readFileSync(secretFile, 'utf8').trim();
   }
   if (secret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-  const allowLegacy = options.allowUnregisteredDevices ?? (process.env.ALLOW_UNREGISTERED_DEVICES ?? 'true') === 'true';
+  const allowLegacy = options.allowUnregisteredDevices ?? process.env.ALLOW_UNREGISTERED_DEVICES === 'true';
   const db = new Database(join(dataDir, 'movecompass.sqlite'));
   db.pragma('journal_mode = WAL'); db.pragma('foreign_keys = ON');
   db.exec(`
