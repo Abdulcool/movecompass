@@ -8,7 +8,14 @@
       "expo-router",
       "expo-notifications",
       "expo-image",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MoveCompass to guide your exercise on this device.",
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "web": {
       "bundler": "metro",

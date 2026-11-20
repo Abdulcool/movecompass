@@ -192,12 +192,19 @@ function useSessionState() {
     exercise: { id: string; name: string },
     reps: number,
     source: "manual" | "camera",
+    angles: Record<string, number> = {},
   ) {
     const { event } = await api<{ event: Event }>(
       base,
       "/api/completions",
       token,
-      { exerciseId: exercise.id, exerciseName: exercise.name, reps, source },
+      {
+        exerciseId: exercise.id,
+        exerciseName: exercise.name,
+        reps,
+        source,
+        angles,
+      },
     );
     setEvents((es) => [event, ...es.filter((e) => e.id !== event.id)]);
     return event;

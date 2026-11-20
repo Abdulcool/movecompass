@@ -3,7 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 make g+
 WORKDIR /workspace
 COPY . .
 RUN npm ci
-RUN if [ -f app/package.json ]; then cd app && npx expo export --platform web; fi
+RUN if [ -f app/package.json ]; then npm run build:web -w app; fi
 RUN npm run build -w server
 RUN mkdir -p app/dist
 

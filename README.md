@@ -6,8 +6,8 @@ Use Node 22 (`nvm use`), then `npm install` (Expo SDK 58 requires Node 22.13+).
 Run `npm test -w packages/pose` and `npm run typecheck`.
 
 `packages/pose` is a DOM-free TypeScript tracking engine shared by future camera
-surfaces. The backend is in `server`; the Expo shell is in `app`. Camera tracking,
-the 3D body selector and firmware are not implemented yet.
+surfaces. The backend is in `server`; the Expo app is in `app`. Camera tracking
+uses a local MediaPipe page. The 3D body selector and firmware are not implemented yet.
 
 `createTracker(id).update(frame)` accepts one MediaPipe pose (flat or nested arrays),
 timestamps in milliseconds and image dimensions. World-space angles are preferred;
@@ -50,9 +50,10 @@ Profile (or the staff dashboard) enables notifications on explicit request.
 Remote native push requires a real device, an EAS project ID under
 `expo.extra.eas.projectId`, and an appropriate development/production build.
 Without that ID, local native notifications still work after permission is granted.
-Do not treat the camera placeholder as actual tracking: it never generates reps.
-`BodyPicker` exposes region selection; `PoseTrackerProps` defines the replacement
-boundary for the next tracking step. Manual completion remains available.
+`BodyPicker` exposes region selection. `PoseTracker` embeds the locally bundled
+MediaPipe page in a web iframe or a permission-gated native WebView. Manual
+completion remains available. See [camera setup and reproduction](app/tracker/README.md)
+and [measured accuracy limitations](app/tracker/ACCURACY.md) before patient use.
 
 Run `npm test -w app` for API client tests. With the exported app served by the
 backend, run `APP_URL=http://127.0.0.1:8080 npm run test:e2e -w app` for the real

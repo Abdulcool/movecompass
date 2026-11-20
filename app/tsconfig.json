@@ -5,6 +5,7 @@
     "app/**/*.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
+    "tracker/**/*.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ]

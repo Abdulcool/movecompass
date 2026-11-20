@@ -14,6 +14,17 @@ function run(counter: RepCounter, values: number[], start = 0, form = '') {
 }
 
 describe('angle math', () => {
+  it('uses the more visible side for best-side knee and elbow metrics', () => {
+    for (const [id, left, right] of [['sit-to-stand', 'leftKnee', 'rightKnee'], ['seated-row', 'leftElbow', 'rightElbow']] as const) {
+      const angles = {...blankAngles(), [left]: 130, [right]: 75};
+      const confidence = Object.fromEntries(Object.keys(angles).map(key => [key, key === right ? .9 : .6])) as ReturnType<typeof extractAngles>['confidence'];
+      expect(getExercise(id).tracking.metric(angles, [], 1, 1, confidence)).toBe(75);
+      confidence[left] = 1;
+      expect(getExercise(id).tracking.metric(angles, [], 1, 1, confidence)).toBe(130);
+      angles[left] = null;
+      expect(getExercise(id).tracking.metric(angles, [], 1, 1, confidence)).toBe(75);
+    }
+  });
   it('computes known 3D angles and ignores translation and scale', () => {
     expect(angle3({x:1,y:0,z:0},{x:0,y:0,z:0},{x:0,y:0,z:1})).toBeCloseTo(90);
     expect(angle3({x:0,y:0},{x:1,y:0},{x:2,y:0})).toBeCloseTo(180);

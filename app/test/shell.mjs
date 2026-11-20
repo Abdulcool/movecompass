@@ -96,12 +96,8 @@ try {
   await p
     .getByRole("button", { name: "Start live pose tracking", exact: true })
     .click();
-  await visible(
-    p.getByText(
-      "Camera tracking is coming in the next step. No camera is active and no repetitions are being detected.",
-    ),
-  );
-  console.log("PASS consent gates the inert PoseTracker placeholder");
+  await visible(p.locator('iframe[title="Live pose tracking"]'));
+  console.log("PASS consent gates the real PoseTracker iframe");
   await p.reload();
   await visible(p.getByText("Before camera tracking"));
   console.log("PASS auth persists after reload");

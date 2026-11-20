@@ -36,7 +36,7 @@ export function createTracker(exerciseId: string) {
       const p = smooth(flatten(frame.landmarks), 'i', time);
       const world = smooth(flatten(frame.worldLandmarks), 'w', time);
       const result = extractAngles({...frame, landmarks: p, worldLandmarks: world});
-      let metric = frame.width > 0 && frame.height > 0 ? exercise.tracking.metric(result.angles, p, frame.width, frame.height) : null;
+      let metric = frame.width > 0 && frame.height > 0 ? exercise.tracking.metric(result.angles, p, frame.width, frame.height, result.confidence) : null;
       let calibrating = false;
       if (exercise.tracking.mode === 'baseline' && metric !== null) {
         if (baseline === null) {
@@ -50,7 +50,7 @@ export function createTracker(exerciseId: string) {
         }
         metric = baseline === null ? null : metric - baseline;
       }
-      if (exercise.tracking.metric(result.angles, p, frame.width, frame.height) !== null) validTime = time;
+      if (exercise.tracking.metric(result.angles, p, frame.width, frame.height, result.confidence) !== null) validTime = time;
       const form = exercise.tracking.formChecks.find(check => check.test(result.angles))?.message ?? '';
       counter.update(metric, time, form);
       output = {...result, metric, reps: counter.reps, phase: counter.phase, feedback: calibrating ? 'Stand still for one second to calibrate' : counter.feedback, lastRep: counter.lastRep};

@@ -32,12 +32,16 @@ export default function Track() {
       </Page>
     );
   const exercise = e;
-  async function save(count: number, source: "manual" | "camera") {
+  async function save(
+    count: number,
+    source: "manual" | "camera",
+    angles: Record<string, number> = {},
+  ) {
     if (saving.current) return;
     saving.current = true;
     setBusy(true);
     try {
-      await session.complete(exercise, count, source);
+      await session.complete(exercise, count, source, angles);
       setSaved(true);
       setMessage("Session saved. Your care team has been notified.");
     } catch (error) {
@@ -49,7 +53,6 @@ export default function Track() {
   }
   function onRep(count: number) {
     setReps(count);
-    if (count >= exercise.reps) void save(count, "camera");
   }
   return (
     <Page>
@@ -69,8 +72,8 @@ export default function Track() {
             is guidance, not diagnosis.
           </Copy>
           <Copy>
-            Camera tracking is a prototype. The camera component is not
-            implemented in this step.
+            Camera tracking is a prototype. Allow camera access after you
+            consent. Frames are processed on this device and are not uploaded.
           </Copy>
           <Button
             title={`${consent ? "✓ " : ""}I understand and consent to the tracking prototype`}
@@ -93,7 +96,7 @@ export default function Track() {
               exerciseId={exercise.id}
               target={exercise.reps}
               onRep={onRep}
-              onComplete={(count) => void save(count, "camera")}
+              onComplete={(count, angles) => void save(count, "camera", angles)}
             />
           )}
           <Button

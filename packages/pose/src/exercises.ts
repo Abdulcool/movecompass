@@ -1,7 +1,7 @@
-import { type Angles, type Landmark, visible } from './angles';
+import { type Angles, type Confidence, type Landmark, visible } from './angles';
 export interface FormCheck { test: (a: Angles) => boolean; message: string }
 export interface Tracking {
-  metric: (a: Angles, p: Landmark[], width: number, height: number) => number | null;
+  metric: (a: Angles, p: Landmark[], width: number, height: number, confidence?: Confidence) => number | null;
   side: 'best' | 'both' | 'left' | 'right';
   enterBelow?: number; enterAbove?: number; exitAbove?: number; exitBelow?: number;
   minRepMs: number; targetRangeLabel: string; formChecks: FormCheck[];
@@ -13,7 +13,7 @@ export interface Exercise {
   difficulty: 'Gentle' | 'Steady'; description: string; steps: [string, string, string];
   safety: string; target: string; gif: string; angleGuide: {label: string; target: string}[]; tracking: Tracking;
 }
-const best = (a: number | null, b: number | null) => a ?? b;
+const best = (a: number | null, b: number | null, left = 0, right = 0) => a === null ? b : b === null ? a : right > left ? b : a;
 const ratio = (p: Landmark[], ids: number[], compute: () => [number, number]) => {
   if (!ids.every(i => visible(p[i]))) return null;
   const [n, d] = compute(); return d > 1e-8 && Number.isFinite(n / d) ? n / d : null;
@@ -37,7 +37,7 @@ export const exercises: Exercise[] = [
     steps: ['Sit tall with the band looped safely around a sturdy anchor.', 'Pull elbows back toward your ribs without shrugging.', 'Pause, breathe out, and slowly return the band.'],
     safety: 'Use a light band. Keep both feet grounded and avoid holding your breath.', target: 'Mid-back', gif: 'seated-row.gif',
     angleGuide: [{label: 'Elbow bend', target: 'Pull below 95°, return above 150°'}, {label: 'Shoulders', target: 'Level and relaxed'}],
-    tracking: {side: 'best', metric: a => best(a.leftElbow, a.rightElbow), enterBelow: 95, exitAbove: 150, minRepMs: 800, targetRangeLabel: 'Pull, pause, then extend your arms', formChecks: []},
+    tracking: {side: 'best', metric: (a, _p, _w, _h, c) => best(a.leftElbow, a.rightElbow, c?.leftElbow, c?.rightElbow), enterBelow: 95, exitAbove: 150, minRepMs: 800, targetRangeLabel: 'Pull, pause, then extend your arms', formChecks: []},
   },
   {
     id: 'pendulum', name: 'Shoulder pendulum', group: 'shoulders', goal: 'pain-relief', minutes: 4, sets: 2, reps: 8, difficulty: 'Gentle',
@@ -53,7 +53,7 @@ export const exercises: Exercise[] = [
     steps: ['Choose a firm chair and place it near a counter or rail.', 'Scoot forward, lean your chest slightly over your toes, and press through your feet.', 'Stand tall, then lower slowly with control.'],
     safety: 'Use your support as needed. Have someone nearby if you feel unsteady.', target: 'Thighs + glutes', gif: 'sit-to-stand.gif',
     angleGuide: [{label: 'Knee bend', target: 'Below 105°'}, {label: 'Standing finish', target: 'Above 160°'}],
-    tracking: {side: 'best', metric: a => best(a.leftKnee, a.rightKnee), enterBelow: 105, exitAbove: 160, minRepMs: 800, targetRangeLabel: 'Sit with control, then stand tall', formChecks: [chest]},
+    tracking: {side: 'best', metric: (a, _p, _w, _h, c) => best(a.leftKnee, a.rightKnee, c?.leftKnee, c?.rightKnee), enterBelow: 105, exitAbove: 160, minRepMs: 800, targetRangeLabel: 'Sit with control, then stand tall', formChecks: [chest]},
   },
   {
     id: 'hip-shift', name: 'Counter hip shift', group: 'hips', goal: 'stretch', minutes: 5, sets: 2, reps: 8, difficulty: 'Gentle',
