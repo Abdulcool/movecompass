@@ -66,7 +66,6 @@ export function createBackend(options: Options = {}) {
   for (const [address, name, role] of [['janedoe@gmail.com', 'Jane Doe', 'patient'], ['staff@cccare.ca', 'CCCARE Staff', 'staff']] as const) {
     if (!byEmail(address)) db.prepare('INSERT INTO users VALUES (?, ?, ?, ?, ?)').run(randomUUID(), address, name, role, bcrypt.hashSync('123', 10));
   }
-  const janeId = byEmail('janedoe@gmail.com')!.id;
   const deviceById = (id: string) => db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as Device | undefined;
   const tokenFor = (u: User, role: Role) => jwt.sign({role}, secret, {subject: u.id, expiresIn: '7d', issuer: 'movecompass', audience: 'movecompass-app'});
   const verify = (token: string): Identity | null => {
@@ -74,7 +73,7 @@ export function createBackend(options: Options = {}) {
       const p = jwt.verify(token, secret, {algorithms: ['HS256'], issuer: 'movecompass', audience: 'movecompass-app'});
       if (typeof p === 'string' || !p.sub || !p.exp || !['patient', 'staff'].includes(p.role)) return null;
       const user = byId(p.sub);
-      if (!user || (p.role !== user.role && user.id !== janeId)) return null;
+      if (!user || p.role !== user.role) return null;
       return { id: p.sub, role: p.role, exp: p.exp };
     } catch { return null; }
   };
@@ -136,7 +135,7 @@ export function createBackend(options: Options = {}) {
     const b = req.body;
     if (!object(b) || !email(b.email) || typeof b.password !== 'string' || typeof b.role !== 'string' || !['patient', 'staff'].includes(b.role)) { res.status(400).json({errors: ['email, password and role (patient|staff) required']}); return; }
     const user = byEmail(b.email);
-    if (!user || !(await bcrypt.compare(b.password, user.password_hash)) || (user.role !== b.role && user.id !== janeId)) { res.status(401).json({error: 'Invalid credentials or role'}); return; }
+    if (!user || user.role !== b.role || !(await bcrypt.compare(b.password, user.password_hash))) { res.status(401).json({error: 'Invalid credentials or role'}); return; }
     const role = b.role as Role; res.json({token: tokenFor(user, role), user: publicUser(user, role)});
   });
   app.get('/api/me', auth, (_req, res) => { const u = identity(res); res.json({user: publicUser(byId(u.id)!, u.role)}); });

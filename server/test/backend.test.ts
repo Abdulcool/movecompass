@@ -15,7 +15,7 @@ let push: ExpoPushMessage[][];
 let sockets: WebSocket[];
 const payload = {type:'exercise_completed', deviceId:'legacy-board', patientName:'Jane Doe', exerciseId:'sit-to-stand', exerciseName:'Supported sit-to-stand', reps:6, completedAt:'2026-11-20T19:30:00Z', transport:'wifi'};
 const completion = {exerciseId:'sit-to-stand', exerciseName:'Supported sit-to-stand', reps:6, source:'camera', angles:{leftKnee:72}};
-const login = async (role = 'patient', email = 'janedoe@gmail.com') => {
+const login = async (role = 'patient', email = role === 'staff' ? 'staff@cccare.ca' : 'janedoe@gmail.com') => {
   const response = await request(backend.app).post('/api/auth/login').send({email, password:'123', role});
   expect(response.status).toBe(200); return response.body.token as string;
 };
@@ -42,14 +42,15 @@ beforeEach(async () => {
 afterEach(async()=>{for(const s of sockets)s.terminate();await backend.close();rmSync(dir,{recursive:true,force:true});});
 
 describe('auth and isolation',()=>{
-  it('seeds Jane patient/staff and staff account, protects me and hashes passwords',async()=>{
+  it('keeps patient and staff roles separate, protects me and hashes passwords',async()=>{
     expect((await request(backend.app).get('/api/me')).status).toBe(401);
-    for(const [role,email] of [['patient','janedoe@gmail.com'],['staff','janedoe@gmail.com'],['staff','staff@cccare.ca']]) {
+    for(const [role,email] of [['patient','janedoe@gmail.com'],['staff','staff@cccare.ca']]) {
       const token=await login(role,email);
       const me=await request(backend.app).get('/api/me').auth(token,{type:'bearer'});
       expect(me.body.user.role).toBe(role); expect(me.body.user.password_hash).toBeUndefined();
     }
     expect((backend.db.prepare('SELECT password_hash FROM users LIMIT 1').get() as any).password_hash).toMatch(/^\$2/);
+    expect((await request(backend.app).post('/api/auth/login').send({email:'janedoe@gmail.com',password:'123',role:'staff'})).status).toBe(401);
     expect((await request(backend.app).post('/api/auth/login').send({email:'janedoe@gmail.com',password:'wrong',role:'staff'})).status).toBe(401);
     expect((await request(backend.app).post('/api/auth/login').send({email:'staff@cccare.ca',password:'123',role:'patient'})).status).toBe(401);
     expect((await request(backend.app).post('/api/auth/login').send({})).status).toBe(400);
