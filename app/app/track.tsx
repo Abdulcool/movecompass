@@ -123,6 +123,7 @@ export default function Track() {
               target={exercise.reps}
               initialReps={initial.current.reps}
               initialAngles={initial.current.angles}
+              onManual={()=>{if(reps>0)void save(reps,'manual');else {setManualCount(String(exercise.reps));setManualOpen(true);}}}
               onRep={onRep}
               onComplete={(count, angles) => void save(count, "camera", angles)}
             />

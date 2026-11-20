@@ -4,6 +4,7 @@ export interface PoseTrackerProps {
   onRep: (reps: number, lastRep?: Rep, angles?: Record<string,number>) => void;
   initialReps?: number;
   initialAngles?: Record<string,number>;
+  onManual?: () => void;
   onComplete: (reps: number, angles: Record<string, number>) => void;
   target: number;
 }

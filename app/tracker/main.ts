@@ -2,6 +2,7 @@ import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { createTracker, getExercise, joints, visible } from "@movecompass/pose";
 import { angleSummary, relevantJoints, rangeProgress } from "./metrics";
 import { setProgress } from './progress';
+import { cameraGuidance } from '../src/camera-errors';
 declare global {
   interface Window {
     ReactNativeWebView?: { postMessage: (message: string) => void };
@@ -44,7 +45,8 @@ function stop() {
 }
 function fail(error: unknown) {
   stop();
-  const message = error instanceof Error ? error.message : String(error);
+  const message = cameraGuidance(error);
+  el('feedback').textContent='';el('visibility').textContent='';el('range').textContent='';
   el("error").textContent = message;
   el("error").hidden = false;
   el("retry").hidden = false;
