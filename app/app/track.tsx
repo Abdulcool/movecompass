@@ -6,6 +6,7 @@ import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { exercises } from "@movecompass/pose";
 import { PoseTracker } from "../src/PoseTracker";
 import { illustrations } from "../src/assets";
+import { comfortGuidance } from '../src/exercise-guidance';
 import { useSession } from "../src/session";
 import { draftKey, loadDraft, storeDraft, removeDraft } from '../src/drafts';
 import { Button, Card, Copy, Page, Title, s } from "../src/ui";
@@ -95,6 +96,7 @@ export default function Track() {
         <Card>
           <Text style={s.heading}>Before camera tracking</Text>
           <Copy>{exercise.safety}</Copy>
+          <Copy>{comfortGuidance[exercise.id]}</Copy>
           <Copy>
             Use stable support or a care partner where recommended. This feature
             is guidance, not diagnosis.

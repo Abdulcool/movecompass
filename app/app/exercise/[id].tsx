@@ -6,6 +6,7 @@ import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { exercises } from "@movecompass/pose";
 import { useSession } from "../../src/session";
 import { illustrations } from "../../src/assets";
+import { comfortGuidance } from '../../src/exercise-guidance';
 import { Button, Card, Copy, Page, Title, s } from "../../src/ui";
 export default function Detail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -74,11 +75,7 @@ export default function Detail() {
       <Card>
         <Text style={s.heading}>Move safely</Text>
         <Copy>{e.safety}</Copy>
-        {e.angleGuide.map((a) => (
-          <Copy key={a.label}>
-            {a.label}: {a.target}
-          </Copy>
-        ))}
+        <Copy>{comfortGuidance[e.id]}</Copy>
         <Copy>This feature is guidance, not diagnosis.</Copy>
       </Card>
       <Button
