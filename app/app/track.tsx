@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { randomUUID } from 'expo-crypto';
 import { Text, TextInput } from "react-native";
 import { Image } from "expo-image";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
@@ -6,6 +7,7 @@ import { exercises } from "@movecompass/pose";
 import { PoseTracker } from "../src/PoseTracker";
 import { gifs } from "../src/assets";
 import { useSession } from "../src/session";
+import { draftKey, loadDraft, storeDraft, removeDraft } from '../src/drafts';
 import { Button, Card, Copy, Page, Title, s } from "../src/ui";
 export default function Track() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -19,6 +21,22 @@ export default function Track() {
     [busy, setBusy] = useState(false);
   const [manualCount, setManualCount] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
+  const [angles, setAngles] = useState<Record<string,number>>({});
+  const [draftReady, setDraftReady] = useState(false), [hasDraft, setHasDraft] = useState(false);
+  const clientId = useRef(randomUUID());
+  const key = session.user && e ? draftKey(session.base,session.user.id,e.id) : '';
+  useEffect(()=>{
+    let active=true;setDraftReady(false);
+    if(key)void loadDraft(key).then(d=>{
+      if(!active)return;
+      if(d){setReps(d.reps);setAngles(d.angles);clientId.current=d.clientId;setHasDraft(true);}
+      setDraftReady(true);
+    }).catch(()=>{if(active)setMessage("This device couldn't restore the unfinished set.");});
+    return()=>{active=false;};
+  },[key]);
+  useEffect(()=>{
+    if(key && e && draftReady && !saved && reps>0)void storeDraft(key,{exerciseId:e.id,clientId:clientId.current,reps,angles}).catch(()=>setMessage("This device couldn't keep your progress. Please save before leaving."));
+  },[key,draftReady,reps,angles,saved]);
   const saving = useRef(false);
   if (!session.ready)
     return (
@@ -46,6 +64,7 @@ export default function Track() {
     setBusy(true);
     try {
       await session.complete(exercise, count, source, angles);
+      if(key)await removeDraft(key);
       setSaved(true);
       setMessage("Session saved. Your care team has been notified.");
     } catch (error) {
@@ -62,6 +81,7 @@ export default function Track() {
     <Page>
       <Text style={s.eyebrow}>GUIDED TRACKING</Text>
       <Title>{exercise.name}</Title>
+      {hasDraft && !saved && <Card><Text style={s.heading}>Resume or save the {reps} reps</Text><Copy>Your unfinished set and range of motion are saved on this device.</Copy><Button title="Resume this set" onPress={()=>{setHasDraft(false);setMessage('Review the camera consent below to resume.');}}/><Button title={`Save the ${reps} reps`} disabled={busy} onPress={()=>void save(reps,'camera',angles)}/></Card>}
       <Image
         source={gifs[exercise.id]}
         style={{ height: 220, width: "100%" }}
