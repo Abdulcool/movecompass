@@ -13,6 +13,7 @@ import { Pressable, Text, View } from "react-native";
 import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
 import { notify, unregisterNotifications } from "./notifications";
 import { colors } from "./ui";
+import { mergeEvents } from './event-history';
 function useLive(
   url: string,
   token: string,
@@ -88,6 +89,8 @@ function useSessionState() {
     [toast, setToast] = useState(""),
     [error, setError] = useState("");
   const base = baseUrl(setting);
+  const activeToken=useRef(token),knownEvents=useRef(new Set<string>()),snapshotSeq=useRef(0);
+  activeToken.current=token;
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -139,9 +142,11 @@ function useSessionState() {
         "/api/events?limit=200",
         token,
       );
-      setEvents(data.events);
-      setTotal(data.total); setWeeklyTotal(data.weeklyTotal);
-      setDailySets(data.dailySets);
+      if(activeToken.current!==token)return;
+      for(const e of data.events){knownEvents.current.add(e.id);snapshotSeq.current=Math.max(snapshotSeq.current,e.seq||0);}
+      setEvents(current=>mergeEvents(data.events,current));
+      setTotal(t=>Math.max(t,data.total)); setWeeklyTotal(t=>Math.max(t,data.weeklyTotal));
+      setDailySets(current=>Object.fromEntries(Array.from(new Set([...Object.keys(current),...Object.keys(data.dailySets)])).map(id=>[id,Math.max(current[id]||0,data.dailySets[id]||0)])));
       if (user?.role === "staff")
         setDevices(
           (await api<{ devices: Device[] }>(base, "/api/devices", token))
@@ -177,15 +182,12 @@ function useSessionState() {
     token,
     user?`mc-cursor:${base}:${user.id}`:'',
     (data) => {
-      if(data.kind==='reset'){setEvents([]);setTotal(0);setWeeklyTotal(0);setDailySets({});void refresh();return;}
+      if(data.kind==='reset'){knownEvents.current.clear();snapshotSeq.current=0;setEvents([]);setTotal(0);setWeeklyTotal(0);setDailySets({});void refresh();return;}
       if (data.kind === "event") {
+        if(!knownEvents.current.has(data.event.id) && data.event.seq>snapshotSeq.current){setTotal(t=>t+1);if(Date.now()-Date.parse(data.event.completedAt)<7*86400000)setWeeklyTotal(t=>t+1);}
+        knownEvents.current.add(data.event.id);
         void refresh();
-        setEvents((current) =>
-          [data.event, ...current.filter((e) => e.id !== data.event.id)].slice(
-            0,
-            200,
-          ),
-        );
+        setEvents(current=>mergeEvents(current,[data.event]));
         const message = `${data.event.patientName} completed ${data.event.exerciseName} · ${data.event.reps} reps · set ${data.event.setNumber || 1}/${data.event.totalSets || 2}`;
         setToast(message);
         void notify(message).catch(() => {});
@@ -225,6 +227,7 @@ function useSessionState() {
     setUser(result.user);
     setToken(result.token);
     setEvents([]);
+    knownEvents.current.clear();snapshotSeq.current=0;
     setTotal(0); setWeeklyTotal(0);
     setDailySets({});
     setDevices([]);
