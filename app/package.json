@@ -5,9 +5,9 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "build:web": "expo export -p web && node scripts/build-tracker.mjs",
+    "build:web": "expo export -p web && node scripts/build-tracker.mjs && node scripts/build-body.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run test/api.test.ts test/tracker.test.ts",
+    "test": "vitest run test/api.test.ts test/tracker.test.ts test/body.test.ts",
     "test:e2e": "node test/shell.mjs",
     "build:tracker": "node scripts/build-tracker.mjs"
   },
@@ -15,6 +15,7 @@
     "@mediapipe/tasks-vision": "^1.2.3",
     "@movecompass/pose": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-three/fiber": "^9.8.2",
     "expo": "~58.0.26",
     "expo-camera": "~58.0.14",
     "expo-constants": "~58.0.16",
@@ -30,11 +31,15 @@
     "react-native-safe-area-context": "~5.11.1",
     "react-native-screens": "~4.30.1",
     "react-native-web": "^0.21.0",
-    "react-native-webview": "14.0.1"
+    "react-native-webview": "14.0.1",
+    "three": "^0.187.0"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
     "@playwright/test": "^1.65.1",
     "@types/react": "~19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.187.0",
     "esbuild": "^0.25.12",
     "typescript": "~6.0.3"
   }

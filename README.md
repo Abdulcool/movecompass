@@ -7,7 +7,8 @@ Run `npm test -w packages/pose` and `npm run typecheck`.
 
 `packages/pose` is a DOM-free TypeScript tracking engine shared by future camera
 surfaces. The backend is in `server`; the Expo app is in `app`. Camera tracking
-uses a local MediaPipe page. The 3D body selector and firmware are not implemented yet.
+uses a local MediaPipe page. The Plan includes a realistic CC0 human body selector;
+firmware is not implemented yet.
 
 `createTracker(id).update(frame)` accepts one MediaPipe pose (flat or nested arrays),
 timestamps in milliseconds and image dimensions. World-space angles are preferred;
@@ -50,7 +51,10 @@ Profile (or the staff dashboard) enables notifications on explicit request.
 Remote native push requires a real device, an EAS project ID under
 `expo.extra.eas.projectId`, and an appropriate development/production build.
 Without that ID, local native notifications still work after permission is granted.
-`BodyPicker` exposes region selection. `PoseTracker` embeds the locally bundled
+`BodyPicker` uses a shared R3F scene directly on web and in `/body.html` on native
+through WebView (no native GL module). Drag to rotate; pinch/scroll to zoom. Chips
+remain available when WebGL is unavailable. The GLB is bundled locally; see
+[asset credits](docs/CREDITS.md). `PoseTracker` embeds the locally bundled
 MediaPipe page in a web iframe or a permission-gated native WebView. Manual
 completion remains available. See [camera setup and reproduction](app/tracker/README.md)
 and [measured accuracy limitations](app/tracker/ACCURACY.md) before patient use.
