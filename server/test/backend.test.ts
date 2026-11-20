@@ -78,6 +78,11 @@ describe('auth and isolation',()=>{
   });
 });
 describe('completion contract and storage',()=>{
+  it('deduplicates authenticated device notify retries by idempotency key',async()=>{
+    const staff=await login('staff'),d=await device(staff),data={...payload,deviceId:d.deviceId};
+    const post=()=>request(backend.app).post('/api/esp32/notify').set('X-Device-Key',d.deviceKey).set('Idempotency-Key','board-set-1').send(data);
+    const a=await post(),b=await post();expect(a.status).toBe(202);expect(b.body.event.id).toBe(a.body.event.id);
+  });
   it('logs one set per manual or camera save and reports daily set progress',async()=>{
     const token=await login();
     const first=await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send(completion);

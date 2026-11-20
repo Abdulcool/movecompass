@@ -267,12 +267,14 @@ export function createBackend(options: Options = {}) {
     if (!knownExercise(b.exerciseId)) errors.push('Choose an exercise from your plan');
     if (!repsValid(b.reps)) errors.push('Reps must be a whole number from 1 to 100');
     if (!timestampValid(b.completedAt)) errors.push('completedAt must be an ISO8601 timestamp with timezone');
+    const submissionKey=req.get('Idempotency-Key')??b.idempotencyKey;
+    if(submissionKey!==undefined&&!text(submissionKey))errors.push('A non-empty idempotency key up to 200 characters is required');
     if (typeof b.transport !== 'string' || !['wifi', 'app', 'camera'].includes(b.transport)) errors.push('transport must be wifi, app or camera');
     if (errors.length) { res.status(400).json({errors}); return; }
     const device = deviceById(b.deviceId as string);
     if ((device && !keyMatches(req.get('X-Device-Key'), device.key_hash)) || (!device && !allowLegacy)) { res.status(401).json({error: 'Invalid device credentials'}); return; }
     const owner = device ? byId(device.patient_id) : undefined;
-    const event = persist({id: randomUUID(), type: 'exercise_completed', deviceId: b.deviceId as string, patientId: owner?.id ?? null, patientName: owner?.name ?? b.patientName as string, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, completedAt: b.completedAt as string, transport: b.transport as CompletionEvent['transport'], source: 'device', angles: {}});
+    const event = persist({id: randomUUID(), type: 'exercise_completed', deviceId: b.deviceId as string, patientId: owner?.id ?? null, patientName: owner?.name ?? b.patientName as string, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, completedAt: b.completedAt as string, transport: b.transport as CompletionEvent['transport'], source: 'device', angles: {}},typeof submissionKey==='string'?{owner:`device:${b.deviceId}`,key:submissionKey}:undefined);
     if (device) touch(device.id);
     res.status(202).json({event});
   });
