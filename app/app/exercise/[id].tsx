@@ -5,7 +5,7 @@ import { Image } from "expo-image";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { exercises } from "@movecompass/pose";
 import { useSession } from "../../src/session";
-import { gifs } from "../../src/assets";
+import { illustrations } from "../../src/assets";
 import { Button, Card, Copy, Page, Title, s } from "../../src/ui";
 export default function Detail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -54,11 +54,12 @@ export default function Detail() {
       <Copy>{e.description}</Copy>
       <Card>
         <Image
-          source={gifs[e.id]}
+          source={illustrations[e.id]}
           style={{ height: 280, width: "100%", borderRadius: 16 }}
           contentFit="contain"
-          accessibilityLabel={`${e.name} demonstration`}
+          accessibilityLabel={`Illustration: ${e.name}`}
         />
+        <Copy>Illustration · Follow the supported movement below. No weights are needed.</Copy>
         <Text style={s.heading}>{e.target}</Text>
         <Copy>
           {e.minutes} minutes · {e.sets} sets × {e.reps} reps

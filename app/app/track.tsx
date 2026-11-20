@@ -5,7 +5,7 @@ import { Image } from "expo-image";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { exercises } from "@movecompass/pose";
 import { PoseTracker } from "../src/PoseTracker";
-import { gifs } from "../src/assets";
+import { illustrations } from "../src/assets";
 import { useSession } from "../src/session";
 import { draftKey, loadDraft, storeDraft, removeDraft } from '../src/drafts';
 import { Button, Card, Copy, Page, Title, s } from "../src/ui";
@@ -85,10 +85,12 @@ export default function Track() {
       <Title>{exercise.name}</Title>
       {hasDraft && !saved && <Card><Text style={s.heading}>Resume or save the {reps} reps</Text><Copy>Your unfinished set and range of motion are saved on this device.</Copy><Button title="Resume this set" onPress={()=>{setHasDraft(false);setMessage('Review the camera consent below to resume.');}}/><Button title={`Save the ${reps} reps`} disabled={busy} onPress={()=>void save(reps,'camera',angles)}/></Card>}
       <Image
-        source={gifs[exercise.id]}
+        source={illustrations[exercise.id]}
         style={{ height: 220, width: "100%" }}
         contentFit="contain"
+        accessibilityLabel={`Illustration: ${exercise.name}`}
       />
+      <Copy>Illustration · Stay within your comfortable range.</Copy>
       {!started ? (
         <Card>
           <Text style={s.heading}>Before camera tracking</Text>
