@@ -18,7 +18,7 @@ export default function Profile() {
       <Card>
         <Text style={s.heading}>Your activity</Text>
         <Copy>
-          {session.events.length} recorded activities · {weekly.length} in the
+          {session.total} recorded activities · {session.weeklyTotal} in the
           last 7 days
         </Copy>
         <Copy>

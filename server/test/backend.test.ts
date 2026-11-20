@@ -72,6 +72,12 @@ describe('auth and isolation',()=>{
   });
 });
 describe('completion contract and storage',()=>{
+  it('returns uncapped patient-scoped history counts',async()=>{
+    const token=await login();const me=await request(backend.app).get('/api/me').auth(token,{type:'bearer'});
+    for(let i=0;i<205;i++)backend.db.prepare('INSERT INTO events(patient_id,payload) VALUES (?,?)').run(me.body.user.id,JSON.stringify({...completion,id:String(i),completedAt:new Date().toISOString()}));
+    const data=await request(backend.app).get('/api/events?limit=200').auth(token,{type:'bearer'});
+    expect(data.body.events).toHaveLength(200);expect(data.body.total).toBe(205);expect(data.body.weeklyTotal).toBe(205);
+  });
   it('validates missing/wrong fields with 400 and accepts legacy PDF event with 202',async()=>{
     await backend.close();backend=createBackend({dataDir:dir,allowUnregisteredDevices:true});
     const staff=await login('staff');

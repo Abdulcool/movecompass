@@ -65,6 +65,8 @@ function useSessionState() {
     [setting, setSetting] = useState(""),
     [ready, setReady] = useState(false),
     [events, setEvents] = useState<Event[]>([]),
+    [total, setTotal] = useState(0),
+    [weeklyTotal, setWeeklyTotal] = useState(0),
     [devices, setDevices] = useState<Device[]>([]),
     [toast, setToast] = useState(""),
     [error, setError] = useState("");
@@ -103,12 +105,13 @@ function useSessionState() {
   const refresh = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await api<{ events: Event[] }>(
+      const data = await api<{ events: Event[]; total: number; weeklyTotal: number }>(
         base,
         "/api/events?limit=200",
         token,
       );
       setEvents(data.events);
+      setTotal(data.total); setWeeklyTotal(data.weeklyTotal);
       if (user?.role === "staff")
         setDevices(
           (await api<{ devices: Device[] }>(base, "/api/devices", token))
@@ -127,6 +130,7 @@ function useSessionState() {
     token,
     (data) => {
       if (data.kind === "event") {
+        void refresh();
         setEvents((current) =>
           [data.event, ...current.filter((e) => e.id !== data.event.id)].slice(
             0,
@@ -170,6 +174,7 @@ function useSessionState() {
     setUser(result.user);
     setToken(result.token);
     setEvents([]);
+    setTotal(0); setWeeklyTotal(0);
     setDevices([]);
     setError("");
   }
@@ -179,6 +184,7 @@ function useSessionState() {
     await AsyncStorage.removeItem("mc-token");
     setToken("");
     setUser(null);
+    setTotal(0); setWeeklyTotal(0);
     setEvents([]);
     setDevices([]);
     setToast("");
@@ -210,6 +216,7 @@ function useSessionState() {
       },
     );
     setEvents((es) => [event, ...es.filter((e) => e.id !== event.id)]);
+    await refresh();
     return event;
   }
   return {
@@ -219,6 +226,8 @@ function useSessionState() {
     setting,
     ready,
     events,
+    total,
+    weeklyTotal,
     devices,
     error,
     toast,

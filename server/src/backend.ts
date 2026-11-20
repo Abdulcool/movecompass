@@ -202,7 +202,8 @@ export function createBackend(options: Options = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) { res.status(400).json({errors: ['limit must be an integer from 1 to 200']}); return; }
     const u = identity(res);
     const rows = (u.role === 'staff' ? db.prepare('SELECT payload FROM events ORDER BY id DESC LIMIT ?').all(limit) : db.prepare('SELECT payload FROM events WHERE patient_id = ? ORDER BY id DESC LIMIT ?').all(u.id, limit)) as {payload: string}[];
-    res.json({events: rows.map(r => JSON.parse(r.payload))});
+    const counts = db.prepare(`SELECT count(*) AS total, coalesce(sum(CASE WHEN julianday(json_extract(payload, '$.completedAt')) >= julianday(?) THEN 1 ELSE 0 END), 0) AS weeklyTotal FROM events ${u.role === 'staff' ? '' : 'WHERE patient_id = ?'}`).get(new Date(Date.now()-7*86400000).toISOString(), ...(u.role === 'staff' ? [] : [u.id])) as {total: number; weeklyTotal: number};
+    res.json({events: rows.map(r => JSON.parse(r.payload)), ...counts});
   });
   app.post('/api/devices', auth, staff, (req, res) => {
     const b = req.body;
