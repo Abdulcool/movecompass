@@ -21,3 +21,5 @@ services:
         generateValue: true
       - key: ALLOW_UNREGISTERED_DEVICES
         value: "false"
+      - key: TRUST_PROXY
+        value: "1"

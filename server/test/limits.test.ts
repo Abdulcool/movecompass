@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { it, expect,vi } from 'vitest';
 import request from 'supertest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,4 +30,12 @@ it('separates forwarded client IPs behind one proxy and allows disabling proxy t
       await request(b.app).post('/api/auth/login').set('X-Forwarded-For','198.51.100.2').send({}).expect(trustProxy?400:429);
     }finally{await b.close();rmSync(dir,{recursive:true});}
   }
+});
+it('ignores spoofed forwarding headers by default',async()=>{
+  vi.stubEnv('TRUST_PROXY',undefined);
+  const dir=mkdtempSync(join(tmpdir(),'mc-rate-direct-')),b=createBackend({dataDir:dir});
+  try{
+    for(let i=0;i<10;i++)await request(b.app).post('/api/auth/login').set('X-Forwarded-For',`198.51.100.${i+1}`).send({}).expect(400);
+    await request(b.app).post('/api/auth/login').set('X-Forwarded-For','198.51.100.200').send({}).expect(429);
+  }finally{await b.close();rmSync(dir,{recursive:true});vi.unstubAllEnvs();}
 });
