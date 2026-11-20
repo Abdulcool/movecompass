@@ -145,7 +145,7 @@ export function createBackend(options: Options = {}) {
   app.post('/api/auth/register', async (req, res) => {
     const b = req.body;
     if (!object(b) || !email(b.email) || !text(b.name) || typeof b.password !== 'string' || Buffer.byteLength(b.password) < 8 || Buffer.byteLength(b.password) > 72 || (b.role !== undefined && b.role !== 'patient')) {
-      res.status(400).json({errors: ['Valid email, name, password (8–72 bytes), and patient role required']}); return;
+      res.status(400).json({errors: ['Enter your name and a valid email. Choose a password with at least 8 characters. Staff accounts are provided by your care team.']}); return;
     }
     if (byEmail(b.email)) { res.status(409).json({error: 'Email already registered'}); return; }
     const passwordHash = await bcrypt.hash(b.password, 10);
@@ -156,9 +156,10 @@ export function createBackend(options: Options = {}) {
   });
   app.post('/api/auth/login', async (req, res) => {
     const b = req.body;
-    if (!object(b) || !email(b.email) || typeof b.password !== 'string' || typeof b.role !== 'string' || !['patient', 'staff'].includes(b.role)) { res.status(400).json({errors: ['email, password and role (patient|staff) required']}); return; }
+    if (!object(b) || !email(b.email) || typeof b.password !== 'string' || typeof b.role !== 'string' || !['patient', 'staff'].includes(b.role)) { res.status(400).json({errors: ['Enter your email and password, and choose Patient or CCCARE staff']}); return; }
     const user = byEmail(b.email);
-    if (!user || user.role !== b.role || !(await bcrypt.compare(b.password, user.password_hash))) { res.status(401).json({error: 'Invalid credentials or role'}); return; }
+    if (!user || !(await bcrypt.compare(b.password, user.password_hash))) { res.status(401).json({error: "Email or password isn't right. Please try again."}); return; }
+    if (user.role !== b.role) { res.status(401).json({error: b.role === 'staff' ? "This account isn't a staff account." : 'This is a staff account. Choose CCCARE staff.'}); return; }
     const role = b.role as Role; res.json({token: tokenFor(user, role), user: publicUser(user, role)});
   });
   app.get('/api/me', auth, (_req, res) => { const u = identity(res); res.json({user: publicUser(byId(u.id)!, u.role)}); });
