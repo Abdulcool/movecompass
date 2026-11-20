@@ -8,6 +8,8 @@ export type { PoseTrackerProps } from "./tracker-contract";
 export function PoseTracker({
   exerciseId,
   target,
+  initialReps=0,
+  initialAngles={},
   onRep,
   onComplete,
 }: PoseTrackerProps) {
@@ -36,7 +38,7 @@ export function PoseTracker({
       <WebView
         style={{ height: 760, backgroundColor: "#13231F" }}
         source={{
-          uri: `${base}/tracker.html?exercise=${encodeURIComponent(exerciseId)}&target=${target}`,
+          uri: `${base}/tracker.html?exercise=${encodeURIComponent(exerciseId)}&target=${target}&reps=${initialReps}&angles=${encodeURIComponent(JSON.stringify(initialAngles))}`,
         }}
         originWhitelist={["https://*", "http://*"]}
         mediaCapturePermissionGrantType="grant"
@@ -49,7 +51,7 @@ export function PoseTracker({
         onError={(e) => setError(e.nativeEvent.description)}
         onMessage={(e) => {
           const message = parseTrackerMessage(e.nativeEvent.data);
-          if (message?.type === "rep") onRep(message.reps, message.lastRep);
+          if (message?.type === "rep") onRep(message.reps, message.lastRep, message.angles);
           if (message?.type === "complete" && message.reps >= target)
             onComplete(message.reps, message.angles);
           if (message?.type === "error") setError(message.message);

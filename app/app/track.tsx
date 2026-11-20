@@ -24,6 +24,7 @@ export default function Track() {
   const [angles, setAngles] = useState<Record<string,number>>({});
   const [draftReady, setDraftReady] = useState(false), [hasDraft, setHasDraft] = useState(false);
   const clientId = useRef(randomUUID());
+  const initial = useRef({reps:0,angles:{} as Record<string,number>});
   const key = session.user && e ? draftKey(session.base,session.user.id,e.id) : '';
   useEffect(()=>{
     let active=true;setDraftReady(false);
@@ -56,14 +57,14 @@ export default function Track() {
   async function save(
     count: number,
     source: "manual" | "camera",
-    angles: Record<string, number> = {},
+    rom: Record<string, number> = angles,
   ) {
     if (saving.current) return;
     if (!Number.isInteger(count) || count < 1 || count > 100) { setMessage('Complete at least one rep before saving.'); return; }
     saving.current = true;
     setBusy(true);
     try {
-      await session.complete(exercise, count, source, angles);
+      await session.complete(exercise, count, source, rom);
       if(key)await removeDraft(key);
       setSaved(true);
       setMessage("Session saved. Your care team has been notified.");
@@ -74,8 +75,9 @@ export default function Track() {
       setBusy(false);
     }
   }
-  function onRep(count: number) {
+  function onRep(count: number, _last?: unknown, rom?: Record<string,number>) {
     setReps(count);
+    if(rom)setAngles(rom);
   }
   return (
     <Page>
@@ -106,8 +108,8 @@ export default function Track() {
           />
           <Button
             title="Start live pose tracking"
-            disabled={!consent}
-            onPress={() => setStarted(true)}
+            disabled={!consent || !draftReady}
+            onPress={() => {initial.current={reps,angles};setStarted(true);}}
           />
         </Card>
       ) : (
@@ -119,6 +121,8 @@ export default function Track() {
             <PoseTracker
               exerciseId={exercise.id}
               target={exercise.reps}
+              initialReps={initial.current.reps}
+              initialAngles={initial.current.angles}
               onRep={onRep}
               onComplete={(count, angles) => void save(count, "camera", angles)}
             />

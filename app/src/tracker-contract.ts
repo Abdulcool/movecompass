@@ -1,12 +1,14 @@
 import type { Rep } from "@movecompass/pose";
 export interface PoseTrackerProps {
   exerciseId: string;
-  onRep: (reps: number, lastRep?: Rep) => void;
+  onRep: (reps: number, lastRep?: Rep, angles?: Record<string,number>) => void;
+  initialReps?: number;
+  initialAngles?: Record<string,number>;
   onComplete: (reps: number, angles: Record<string, number>) => void;
   target: number;
 }
 export type TrackerMessage =
-  | { type: "rep"; reps: number; lastRep?: Rep }
+  | { type: "rep"; reps: number; lastRep?: Rep; angles?: Record<string,number> }
   | { type: "complete"; reps: number; angles: Record<string, number> }
   | { type: "error"; message: string };
 export function parseTrackerMessage(value: unknown): TrackerMessage | null {
@@ -28,6 +30,7 @@ export function parseTrackerMessage(value: unknown): TrackerMessage | null {
       type: "rep",
       reps: Number(v.reps),
       lastRep: v.lastRep as Rep | undefined,
+      angles: v.angles && typeof v.angles==='object' && !Array.isArray(v.angles) && Object.values(v.angles).every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=360) ? v.angles as Record<string,number> : undefined,
     };
   if (
     v.type === "complete" &&

@@ -1,6 +1,7 @@
 import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { createTracker, getExercise, joints, visible } from "@movecompass/pose";
 import { angleSummary, relevantJoints, rangeProgress } from "./metrics";
+import { setProgress } from './progress';
 declare global {
   interface Window {
     ReactNativeWebView?: { postMessage: (message: string) => void };
@@ -11,6 +12,10 @@ const canvas = document.querySelector<HTMLCanvasElement>("#overlay")!;
 const ctx = canvas.getContext("2d")!;
 const el = (id: string) => document.getElementById(id)!;
 const params = new URLSearchParams(location.search);
+let seedAngles: Record<string,number> = {};
+try { const seed=JSON.parse(params.get('angles')||'{}');if(seed && typeof seed==='object' && !Array.isArray(seed) && Object.values(seed).every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=360))seedAngles=seed; } catch {}
+const progress = setProgress(Number(params.get('reps')||0),seedAngles);
+let lastEmit = 0;
 let pose: PoseLandmarker | undefined,
   stream: MediaStream | undefined,
   raf = 0,
@@ -18,7 +23,8 @@ let pose: PoseLandmarker | undefined,
   completed = false;
 let generation = 0,
   lastTime = -1,
-  lastReps = 0;
+  lastReps = progress.value().reps;
+  progress.begin();
 function emit(message: unknown) {
   const serialized = JSON.stringify(message);
   if (window.ReactNativeWebView)
@@ -72,11 +78,11 @@ async function start() {
     const exercise = getExercise(params.get("exercise") || "sit-to-stand");
     const rawTarget = params.get("target");
     const target = rawTarget === null ? exercise.reps : Number(rawTarget);
-    if (!Number.isInteger(target) || target < 1 || target > 10000)
-      throw new Error("Target must be an integer from 1 to 10000.");
+    if (!Number.isInteger(target) || target < 1 || target > 100)
+      throw new Error("Choose a target between 1 and 100 reps.");
     el("name").textContent = exercise.name;
-    el("counter").textContent = `0 / ${target}`;
-    emit({ type: "rep", reps: 0, lastRep: null });
+    el("counter").textContent = `${lastReps} / ${target}`;
+    emit({ type: "rep", ...progress.value() });
     el("phase").textContent = "Loading local pose model…";
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
       throw new Error("Camera access needs HTTPS (or localhost).");
@@ -140,6 +146,7 @@ async function start() {
           });
           const points = result.landmarks[0] || [];
           summary.update(output.angles);
+          const current = progress.update(output.reps,summary.value());
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           const x = (n: number) => (1 - n) * canvas.width,
@@ -195,7 +202,7 @@ async function start() {
           const low =
             output.metric === null ||
             keys.some((key) => output.angles[key] === null);
-          el("counter").textContent = `${output.reps} / ${target}`;
+          el("counter").textContent = `${current.reps} / ${target}`;
           el("phase").textContent = output.phase;
           el("feedback").textContent = output.feedback;
           el("visibility").textContent = low
@@ -213,19 +220,18 @@ async function start() {
             : "Complete a controlled movement to see your range of motion.";
           window.dispatchEvent(
             new CustomEvent("movecompass:frame", {
-              detail: { timestampMs, ...output },
+              detail: { timestampMs, ...output, reps:current.reps },
             }),
           );
-          if (output.reps !== lastReps) {
-            lastReps = output.reps;
-            emit({ type: "rep", reps: output.reps, lastRep: output.lastRep });
+          if (current.reps !== lastReps || timestampMs-lastEmit>=500) {
+            lastReps = current.reps;lastEmit=timestampMs;
+            emit({ type: "rep", ...current, lastRep: output.lastRep });
           }
-          if (output.reps >= target && !completed) {
+          if (current.reps >= target && !completed) {
             completed = true;
             emit({
               type: "complete",
-              reps: output.reps,
-              angles: summary.value(),
+              ...current,
             });
             el("feedback").textContent = "Target reached. Well done!";
             stop();
