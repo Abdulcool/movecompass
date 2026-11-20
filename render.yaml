@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: movecompass
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: movecompass-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: WEB_DIST
+        value: /workspace/app/dist
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ALLOW_UNREGISTERED_DEVICES
+        value: "true"
