@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseTrackerMessage } from "../src/tracker-contract";
+import {cameraGuidance} from '../src/camera-errors';
 import {
   angleSummary,
   rangeProgress,
@@ -7,6 +8,10 @@ import {
 } from "../tracker/metrics";
 import { exercises, type Angles } from "@movecompass/pose";
 describe("camera bridge", () => {
+  it('keeps the original DOMException name across both camera bridges',()=>{
+    const error=parseTrackerMessage(JSON.stringify({type:'error',name:'NotAllowedError',message:'Request dismissed'}));
+    expect(cameraGuidance(error)).toContain('Allow camera access in your browser or device settings');
+  });
   it("accepts native JSON and web objects", () => {
     expect(parseTrackerMessage('{"type":"rep","reps":2}')).toMatchObject({
       type: "rep",

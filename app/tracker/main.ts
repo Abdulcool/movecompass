@@ -67,7 +67,7 @@ function fail(error: unknown) {
   el("error").hidden = false;
   el("retry").hidden = false;
   el("phase").textContent = "Camera unavailable";
-  emit({ type: "error", message });
+  emit({ type: "error",name:error&&typeof error==='object'&&'name'in error?String(error.name):'', message:error&&typeof error==='object'&&'message'in error?String(error.message):message });
 }
 el("stop").onclick = () => {
   stop();

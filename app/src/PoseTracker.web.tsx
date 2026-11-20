@@ -8,7 +8,6 @@ export function PoseTracker({
   target,
   initialReps=0,
   initialAngles={},
-  onManual,
   onRep,
   onComplete,
 }: PoseTrackerProps) {
@@ -28,12 +27,12 @@ export function PoseTracker({
       if (message?.type === "rep") {latest.current={reps:message.reps,angles:message.angles||latest.current.angles};onRep(message.reps, message.lastRep, message.angles);}
       if (message?.type === "complete" && message.reps >= target)
         onComplete(message.reps, message.angles);
-      if (message?.type === "error") setError(cameraGuidance(message.message));
+      if (message?.type === "error") setError(cameraGuidance(message));
     }
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [onRep, onComplete]);
-  if(error)return <Card><Copy>{error}</Copy><Button title="Try again" onPress={()=>{seed.current=latest.current;setError('');}}/>{onManual && <Button title="Complete manually" secondary onPress={onManual}/>}</Card>;
+  if(error)return <Card><Copy>{error}</Copy><Button title="Try again" onPress={()=>{seed.current=latest.current;setError('');}}/></Card>;
   return (
     <>
       <iframe
