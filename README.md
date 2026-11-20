@@ -7,8 +7,9 @@ Run `npm test -w packages/pose` and `npm run typecheck`.
 
 `packages/pose` is a DOM-free TypeScript tracking engine shared by future camera
 surfaces. The backend is in `server`; the Expo app is in `app`. Camera tracking
-uses a local MediaPipe page. The Plan includes a realistic CC0 human body selector;
-firmware is not implemented yet.
+uses a local MediaPipe page. The Plan includes a realistic CC0 human body selector.
+[NodeMCU ESP8266 firmware and virtual device](firmware/esp8266/README.md) provide
+patient-matched LED/buzzer completion alerts.
 
 `createTracker(id).update(frame)` accepts one MediaPipe pose (flat or nested arrays),
 timestamps in milliseconds and image dimensions. World-space angles are preferred;
