@@ -22,7 +22,7 @@ export function Page({ children,scrollRef }: React.PropsWithChildren<{scrollRef?
   const focused = useIsFocused();
   if (!focused) return null;
   return (
-    <ScrollView ref={scrollRef} style={s.page} contentContainerStyle={s.content}>
+    <ScrollView role="main" ref={scrollRef} style={s.page} contentContainerStyle={s.content}>
       {children}
     </ScrollView>
   );
@@ -34,8 +34,8 @@ export function Title({ children }: React.PropsWithChildren) {
     </Text>
   );
 }
-export function Copy({ children }: React.PropsWithChildren) {
-  return <Text style={s.copy}>{children}</Text>;
+export function Copy({ children,live=false }: React.PropsWithChildren<{live?:boolean}>) {
+  return <Text role={live?'status':undefined} accessibilityLiveRegion={live?'polite':undefined} style={s.copy}>{children}</Text>;
 }
 export function Card({ children }: React.PropsWithChildren) {
   return <View style={s.card}>{children}</View>;

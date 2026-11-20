@@ -229,9 +229,10 @@ async function start() {
           const low =
             output.metric === null ||
             keys.some((key) => output.angles[key] === null);
-          el("counter").textContent = `${current.reps} / ${target}`;
-          el("phase").textContent = output.phase;
-          el("feedback").textContent = output.feedback;
+          const countLabel=`${current.reps} / ${target}`;
+          if(el('counter').textContent!==countLabel)el('counter').textContent=countLabel;
+          if(el('phase').textContent!==output.phase)el('phase').textContent=output.phase;
+          if(el('feedback').textContent!==output.feedback)el('feedback').textContent=output.feedback;
           el("visibility").textContent = low
             ? "Low visibility — step back so your whole body is in view"
             : "";

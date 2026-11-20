@@ -90,7 +90,7 @@ export default function Detail() {
         secondary
         onPress={() => void complete()}
       />
-      {!!status && <Copy>{status}</Copy>}
+      {!!status && <Copy live>{status}</Copy>}
       {saved && (session.dailySets[e.id]||0)<e.sets && <Button title="Record another set" onPress={()=>{clientId.current=randomUUID();setSaved(false);setStatus('Rest as advised by your care team before your next set.');}}/>}
     </Page>
   );
