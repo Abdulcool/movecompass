@@ -98,6 +98,8 @@ describe('completion contract and storage',()=>{
     for(let i=0;i<205;i++)backend.db.prepare('INSERT INTO events(patient_id,payload) VALUES (?,?)').run(me.body.user.id,JSON.stringify({...completion,id:String(i),completedAt:new Date().toISOString()}));
     const data=await request(backend.app).get('/api/events?limit=200').auth(token,{type:'bearer'});
     expect(data.body.events).toHaveLength(200);expect(data.body.total).toBe(205);expect(data.body.weeklyTotal).toBe(205);
+    const rest=await request(backend.app).get(`/api/events?limit=200&before=${data.body.nextBefore}`).auth(token,{type:'bearer'});
+    expect(rest.body.events).toHaveLength(5);expect(rest.body.nextBefore).toBeNull();
   });
   it('validates missing/wrong fields with 400 and accepts legacy PDF event with 202',async()=>{
     await backend.close();backend=createBackend({dataDir:dir,allowUnregisteredDevices:true});

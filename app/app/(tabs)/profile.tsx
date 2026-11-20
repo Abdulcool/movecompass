@@ -45,6 +45,7 @@ export default function Profile() {
           </View>
         ))}
         {!session.events.length && <Copy>No completed activities yet.</Copy>}
+        {session.total>5 && <Button title="View all activity" secondary onPress={()=>router.push('/history')}/>}
       </Card>
       <Card>
         <Text style={s.heading}>Stay connected</Text>

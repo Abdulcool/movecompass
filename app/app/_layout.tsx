@@ -20,6 +20,7 @@ export default function Layout() {
           options={{ title: "Your exercise" }}
         />
         <Stack.Screen name="track" options={{ title: "Guided tracking" }} />
+        <Stack.Screen name="history" options={{ title: "Your activity history" }} />
         <Stack.Screen name="admin" options={{ title: "CCCARE staff" }} />
         <Stack.Screen
           name="settings"
