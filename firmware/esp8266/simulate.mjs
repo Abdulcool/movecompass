@@ -1,6 +1,23 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'node:events';
 import { pathToFileURL } from 'node:url';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+
+export async function pairWithCode({backendUrl,code,insecureTls=false}) {
+  if(!/^\d{6}$/.test(code||''))throw new Error('Enter a six-digit pairing code');
+  const url=new URL('/api/devices/pair',backendUrl);
+  if(!['http:','https:'].includes(url.protocol))throw new Error('Use an HTTP(S) backend address');
+  const body=JSON.stringify({code});
+  const data=await new Promise((resolve,reject)=>{
+    const req=(url.protocol==='https:'?httpsRequest:httpRequest)(url,{method:'POST',rejectUnauthorized:!insecureTls,headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}},res=>{
+      let text='';res.on('data',chunk=>{text+=chunk;if(text.length>8192)req.destroy(new Error('Pairing response too large'));});
+      res.on('end',()=>{if(res.statusCode!==200){reject(new Error(`Pairing failed (HTTP ${res.statusCode}); request a fresh code`));return;}try{resolve(JSON.parse(text));}catch{reject(new Error('Invalid pairing response'));}});
+    });req.on('error',reject);req.setTimeout(12000,()=>req.destroy(new Error('Pairing timed out')));req.end(body);
+  });
+  if(typeof data.deviceId!=='string'||typeof data.patientId!=='string'||!/^\w{64}$/.test(data.key||''))throw new Error('Invalid device credentials');
+  return {deviceId:data.deviceId,deviceKey:data.key,patientId:data.patientId};
+}
 
 export function completionForPatient(raw, patientId, seen = new Set()) {
   if (!patientId || Buffer.byteLength(raw) > 4096) return null;
@@ -69,10 +86,10 @@ export function createVirtualEsp({ backendUrl, deviceId, deviceKey, patientId, i
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
+    const backendUrl=process.env.BACKEND_URL || 'http://127.0.0.1:8080';
+    const credentials=process.env.PAIRING_CODE ? await pairWithCode({backendUrl,code:process.env.PAIRING_CODE,insecureTls:process.env.INSECURE_TLS==='true'}) : {deviceId:process.env.DEVICE_ID,deviceKey:process.env.DEVICE_KEY,patientId:process.env.PATIENT_ID};
     const sim = createVirtualEsp({
-      backendUrl: process.env.BACKEND_URL || 'http://127.0.0.1:8080',
-      deviceId: process.env.DEVICE_ID, deviceKey: process.env.DEVICE_KEY,
-      patientId: process.env.PATIENT_ID, insecureTls: process.env.INSECURE_TLS === 'true',
+      backendUrl, ...credentials, insecureTls: process.env.INSECURE_TLS === 'true',
     });
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', text => { if (text.trim().toLowerCase() === 'ack') sim.acknowledge(); });

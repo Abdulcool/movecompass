@@ -1,9 +1,22 @@
 #include <ESP8266WiFi.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecureBearSSL.h>
+#include <WiFiManager.h>
+#include <LittleFS.h>
+#include <Ticker.h>
+#if __has_include("config.h")
 #include "config.h"
+#else
+#include "config.h.example"
+#endif
 
 WebSocketsClient socketClient;
+Ticker portalLed;
+String backendUrl, backendHost, deviceId, deviceKey, patientId, wifiSsid, wifiPassword;
+uint16_t backendPort = 80;
+bool backendTls = false;
 bool wifiConnected = false, wifiAttempt = false, backendConnected = false;
 bool alerting = false, buttonRaw = false, buttonStable = false;
 uint32_t wifiStarted = 0, wifiRetryAt = 0, wifiBackoff = 1000;
@@ -18,6 +31,107 @@ bool due(uint32_t now, uint32_t deadline) {
 void outputs(bool led, bool buzzer) {
   digitalWrite(LED_PIN, led ? LOW : HIGH);
   if (BUZZER_PIN >= 0) digitalWrite(BUZZER_PIN, buzzer ? HIGH : LOW);
+}
+
+bool parseBackend() {
+  backendUrl.trim();
+  while (backendUrl.endsWith("/")) backendUrl.remove(backendUrl.length() - 1);
+  backendTls = backendUrl.startsWith("https://");
+  if (!backendTls && !backendUrl.startsWith("http://")) return false;
+  String host = backendUrl.substring(backendTls ? 8 : 7);
+  if (!host.length() || host.length() > 180 || host.indexOf('/') >= 0 || host.indexOf('@') >= 0 || host.indexOf('?') >= 0 || host.indexOf('#') >= 0) return false;
+  const int colon = host.indexOf(':');
+  backendPort = backendTls ? 443 : 80;
+  if (colon >= 0) {
+    String port = host.substring(colon + 1);
+    if (!port.length() || port.length() > 5) return false;
+    for (unsigned int i = 0; i < port.length(); i++) if (!isDigit(port[i])) return false;
+    const long value = port.toInt(); if (value < 1 || value > 65535) return false;
+    backendPort = value; host = host.substring(0, colon);
+  }
+  if (!host.length()) return false;
+  for (unsigned int i = 0; i < host.length(); i++) if (!isalnum(host[i]) && host[i] != '.' && host[i] != '-') return false;
+  backendHost = host; return true;
+}
+
+bool loadConfig() {
+  File file = LittleFS.open("/config.json", "r");
+  if (!file || file.size() > 2048) return false;
+  JsonDocument doc;
+  if (deserializeJson(doc, file)) return false;
+  backendUrl = doc["backend"] | DEFAULT_BACKEND_URL;
+  deviceId = doc["deviceId"] | ""; deviceKey = doc["key"] | ""; patientId = doc["patientId"] | "";
+  wifiSsid = doc["ssid"] | ""; wifiPassword = doc["password"] | "";
+  return parseBackend() && deviceId.length() && deviceKey.length() == 64 && patientId.length() && wifiSsid.length();
+}
+
+bool saveConfig() {
+  JsonDocument doc;
+  doc["backend"] = backendUrl; doc["deviceId"] = deviceId; doc["key"] = deviceKey; doc["patientId"] = patientId;
+  doc["ssid"] = wifiSsid; doc["password"] = wifiPassword;
+  File file = LittleFS.open("/config.tmp", "w"); if (!file) return false;
+  const size_t expected = measureJson(doc), written = serializeJson(doc, file); file.flush(); file.close();
+  return written == expected && LittleFS.rename("/config.tmp", "/config.json");
+}
+
+bool pairDevice(const String &code) {
+  if (!parseBackend() || code.length() != 6) return false;
+  for (unsigned int i = 0; i < code.length(); i++) if (!isDigit(code[i])) return false;
+  WiFiClient plain; BearSSL::WiFiClientSecure secure;
+  secure.setInsecure();
+  WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
+  HTTPClient http; http.setTimeout(12000);
+  if (!http.begin(client, backendUrl + "/api/devices/pair")) return false;
+  http.addHeader("Content-Type", "application/json");
+  JsonDocument request; request["code"] = code; String body; serializeJson(request, body);
+  const int status = http.POST(body);
+  if (status != 200) { http.end(); return false; }
+  const String response = http.getString(); http.end();
+  if (response.length() > 2048) return false;
+  JsonDocument doc;
+  if (deserializeJson(doc, response)) return false;
+  deviceId = doc["deviceId"] | ""; deviceKey = doc["key"] | ""; patientId = doc["patientId"] | "";
+  return deviceId.length() && deviceKey.length() == 64 && patientId.length();
+}
+
+bool setupButtonHeld() {
+  if (SETUP_BUTTON_PIN < 0) return false;
+  pinMode(SETUP_BUTTON_PIN, INPUT_PULLUP);
+  const uint32_t opened = millis();
+  while (millis() - opened < 2000) {
+    if (digitalRead(SETUP_BUTTON_PIN) == LOW) {
+      const uint32_t pressed = millis();
+      while (digitalRead(SETUP_BUTTON_PIN) == LOW) {
+        if (millis() - pressed >= 5000) return true;
+        outputs(millis() % 400 < 200, false); delay(10);
+      }
+    }
+    delay(10);
+  }
+  return false;
+}
+
+void configurePortal() {
+  portalLed.attach_ms(100, []() { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); });
+  for (;;) {
+    const String previousBackend = backendUrl;
+    WiFiManager manager; manager.setDebugOutput(false); manager.setTitle("MoveCompass setup");
+    manager.setBreakAfterConfig(true); manager.setConnectTimeout(25);
+    WiFiManagerParameter server("backend", "MoveCompass server address", backendUrl.length() ? backendUrl.c_str() : DEFAULT_BACKEND_URL, 199);
+    WiFiManagerParameter code("code", "Six-digit pairing code (blank to keep current pairing)", "", 7, "inputmode='numeric' pattern='[0-9]{6}' maxlength='6'");
+    WiFiManagerParameter info("<p>Use your home 2.4 GHz WiFi. Copy the server address and pairing code from your care team. Codes last 15 minutes. Demo TLS does not verify certificates.</p>");
+    manager.addParameter(&server); manager.addParameter(&code); manager.addParameter(&info);
+    Serial.println("Setup WiFi: MoveCompass-Setup; open http://192.168.4.1");
+    if (!manager.startConfigPortal("MoveCompass-Setup") || WiFi.status() != WL_CONNECTED) continue;
+    backendUrl = server.getValue();
+    const String pairing = code.getValue();
+    const bool keep = !pairing.length() && deviceKey.length() == 64 && previousBackend == backendUrl;
+    if (!parseBackend() || (!keep && !pairDevice(pairing))) { Serial.println("Pairing failed: check server address and request a fresh code"); continue; }
+    wifiSsid = WiFi.SSID(); wifiPassword = WiFi.psk();
+    if (!saveConfig()) { Serial.println("Could not save setup; request a fresh pairing code and try again"); continue; }
+    Serial.println("Setup saved; connecting to care team"); break;
+  }
+  portalLed.detach(); outputs(false, false);
 }
 
 String queryValue(const char *value) {
@@ -41,7 +155,7 @@ void completion(uint8_t *payload, size_t length) {
   const char *exercise = event["exerciseName"] | "";
   if (event["type"] != "exercise_completed" || !*id || !*patient || !*exercise ||
       !event["reps"].is<int>() || event["reps"].as<int>() < 1 || event["reps"].as<int>() > 100) return;
-  if (strcmp(patient, PATIENT_ID) != 0) return;
+  if (patientId != patient) return;
   for (const String &seen : recentEvents) if (seen == id) return;
   recentEvents[recentIndex] = id;
   recentIndex = (recentIndex + 1) % 16;
@@ -70,10 +184,10 @@ void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
 
 void startBackend() {
   socketBackoff = 1000;
-  String path = "/ws?deviceId=" + queryValue(DEVICE_ID) + "&key=" + queryValue(DEVICE_KEY);
-  if (BACKEND_TLS) {
-    socketClient.beginSSL(BACKEND_HOST, BACKEND_PORT, path.c_str());
-  } else socketClient.begin(BACKEND_HOST, BACKEND_PORT, path.c_str());
+  String path = "/ws?deviceId=" + queryValue(deviceId.c_str()) + "&key=" + queryValue(deviceKey.c_str());
+  if (backendTls) {
+    socketClient.beginSSL(backendHost.c_str(), backendPort, path.c_str());
+  } else socketClient.begin(backendHost.c_str(), backendPort, path.c_str());
   socketClient.setReconnectInterval(1000);
   socketClient.enableHeartbeat(25000, 5000, 2);
 }
@@ -95,7 +209,7 @@ void updateWifi(uint32_t now) {
   }
   if (!wifiAttempt && due(now, wifiRetryAt)) {
     Serial.println("Connecting WiFi");
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD); wifiStarted = now; wifiAttempt = true;
+    WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str()); wifiStarted = now; wifiAttempt = true;
   } else if (wifiAttempt && now - wifiStarted >= 15000) {
     WiFi.disconnect(); wifiAttempt = false; wifiRetryAt = now + wifiBackoff;
     Serial.printf("WiFi timeout; retry in %lu ms\n", static_cast<unsigned long>(wifiBackoff));
@@ -132,7 +246,10 @@ void setup() {
   Serial.begin(115200); Serial.println(); Serial.println("MoveCompass ESP8266");
   WiFi.persistent(false); WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(false);
   socketClient.onEvent(socketEvent);
-  if (BACKEND_TLS) Serial.println("WARNING: demo WSS uses TLS without certificate verification");
+  if (!LittleFS.begin()) { Serial.println("Storage unavailable; erase flash and reinstall"); while (true) { outputs(millis() % 200 < 100, false); delay(50); } }
+  const bool force = setupButtonHeld();
+  if (!loadConfig() || force) configurePortal();
+  if (backendTls) Serial.println("WARNING: demo HTTPS/WSS uses TLS without certificate verification");
 }
 
 void loop() {

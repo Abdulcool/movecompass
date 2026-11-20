@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createBackend } from '../../server/src/backend.ts';
-import { createVirtualEsp } from './simulate.mjs';
+import { createVirtualEsp, pairWithCode } from './simulate.mjs';
 
 const backend = createBackend({ seedDemo: true, dataDir: await mkdtemp(join(homedir(), 'work', 'esp8266-smoke-')), sendPush: async () => {} });
 await new Promise(resolve => backend.server.listen(0, '127.0.0.1', resolve));
@@ -27,11 +27,14 @@ try {
   const device = devices.find(d => d.deviceId === registered.deviceId);
   assert.equal(device.patientId, jane.user.id);
   console.log(`REGISTERED ${registered.deviceId} for Jane Doe (key not logged)`);
+  const paired=await pairWithCode({backendUrl:base,code:registered.pairingCode});
+  assert.equal(paired.patientId,jane.user.id);
+  console.log('PAIRED by six-digit code; code consumed; key not logged');
   let transport;
   backend.server.on('upgrade', (request, socket) => {
     if (new URL(request.url, base).searchParams.get('deviceId') === registered.deviceId) transport = socket;
   });
-  sim = createVirtualEsp({ backendUrl: base, ...registered, patientId: device.patientId });
+  sim = createVirtualEsp({ backendUrl: base, ...paired });
   let alerts = 0;
   sim.events.on('alert', () => alerts++);
   await once(sim.events, 'connected');

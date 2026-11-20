@@ -1,14 +1,8 @@
 #pragma once
 
-constexpr char WIFI_SSID[] = "YOUR_2_4_GHZ_WIFI";
-constexpr char WIFI_PASSWORD[] = "YOUR_WIFI_PASSWORD";
-constexpr char BACKEND_HOST[] = "192.168.1.100";
-constexpr uint16_t BACKEND_PORT = 8080;
-constexpr bool BACKEND_TLS = false;
-constexpr char DEVICE_ID[] = "YOUR_REGISTERED_DEVICE_ID";
-constexpr char DEVICE_KEY[] = "YOUR_DEVICE_KEY";
-constexpr char PATIENT_ID[] = "YOUR_REGISTERED_PATIENT_ID";
+constexpr char DEFAULT_BACKEND_URL[] = "http://movecompass.local:8080";
 
 constexpr int LED_PIN = 2;
 constexpr int BUZZER_PIN = -1;  // -1 disables the optional active buzzer.
-constexpr int ACK_BUTTON_PIN = -1;  // Set to 0 for D3; connect to GND when pressed.
+constexpr int ACK_BUTTON_PIN = 0;
+constexpr int SETUP_BUTTON_PIN = 0;
