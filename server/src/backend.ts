@@ -168,8 +168,12 @@ export function createBackend(options: Options = {}) {
     if (device) touch(device.id);
     res.status(202).json({event});
   });
-  app.get('/api/esp32/latest', (_req, res) => {
-    const row = db.prepare('SELECT payload FROM events ORDER BY id DESC LIMIT 1').get() as {payload: string} | undefined;
+  app.get('/api/esp32/latest', (req, res) => {
+    const user = verify((req.headers.authorization ?? '').replace(/^Bearer /, ''));
+    const device = deviceById(req.get('X-Device-Id') ?? '');
+    const validDevice = device && keyMatches(req.get('X-Device-Key'), device.key_hash);
+    if (user?.role !== 'staff' && !validDevice) { res.status(user ? 403 : 401).json({error: 'Staff or device authentication required'}); return; }
+    const row = (user?.role === 'staff' ? db.prepare('SELECT payload FROM events ORDER BY id DESC LIMIT 1').get() : db.prepare('SELECT payload FROM events WHERE patient_id = ? ORDER BY id DESC LIMIT 1').get(device!.patient_id)) as {payload: string} | undefined;
     res.json({event: row ? JSON.parse(row.payload) : null});
   });
   app.get('/api/events', auth, (req, res) => {

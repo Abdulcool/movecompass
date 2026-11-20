@@ -73,7 +73,9 @@ describe('auth and isolation',()=>{
 });
 describe('completion contract and storage',()=>{
   it('validates missing/wrong fields with 400 and accepts legacy PDF event with 202',async()=>{
-    expect((await request(backend.app).get('/api/esp32/latest')).body).toEqual({event:null});
+    const staff=await login('staff');
+    expect((await request(backend.app).get('/api/esp32/latest')).status).toBe(401);
+    expect((await request(backend.app).get('/api/esp32/latest').auth(staff,{type:'bearer'})).body).toEqual({event:null});
     const invalid=await request(backend.app).post('/api/esp32/notify').send({});
     expect(invalid.status).toBe(400);expect(invalid.body.errors).toHaveLength(8);
     for(const [key,value] of [['reps',-1],['reps',1.5],['reps','6'],['completedAt','yesterday'],['completedAt','2026-02-31T19:30:00Z'],['transport','bluetooth'],['exerciseId',''],['type','other'],['patientName',12]]) {
@@ -82,7 +84,7 @@ describe('completion contract and storage',()=>{
     const accepted=await request(backend.app).post('/api/esp32/notify').send(payload);
     expect((await request(backend.app).post('/api/esp32/notify').send({...payload,transport:['wifi']})).status).toBe(400);
     expect(accepted.status).toBe(202);expect(accepted.body.event.reps).toBe(6);
-    expect((await request(backend.app).get('/api/esp32/latest')).body.event.id).toBe(accepted.body.event.id);
+    expect((await request(backend.app).get('/api/esp32/latest').auth(staff,{type:'bearer'})).body.event.id).toBe(accepted.body.event.id);
   });
   it('persists events, users, push tokens, device keys and signing secret across restarts',async()=>{
     const token=await login('staff'); const d=await device(token);
