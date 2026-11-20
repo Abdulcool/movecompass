@@ -68,6 +68,7 @@ export default function Track() {
     try {
       const result=await session.complete(exercise, count, source, rom,clientId.current);
       if(key)await removeDraft(key);
+      setReps(count);
       setSaved(true);
       setMessage('queued' in result ? 'Saved on this device — will sync when back online' : "Session saved. Your care team has been notified.");
     } catch (error) {
@@ -93,7 +94,7 @@ export default function Track() {
         accessibilityLabel={`Illustration: ${exercise.name}`}
       />
       <Copy>Illustration · Stay within your comfortable range.</Copy>
-      {!started ? (
+      {!started && !saved ? (
         <Card>
           <Text style={s.heading}>Before camera tracking</Text>
           <Copy>{exercise.safety}</Copy>
