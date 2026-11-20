@@ -21,6 +21,12 @@ export function extractAngles(frame: PoseFrame): { angles: Angles; confidence: C
   const angles = {} as Angles, confidence = {} as Confidence;
   for (const key of Object.keys(joints) as (keyof typeof joints)[]) {
     const ids = joints[key];
+    if((key==='leftShoulder'||key==='rightShoulder')&&!visible(image[ids[0]])&&visible(image[ids[1]])&&visible(image[ids[2]])){
+      const shoulder=image[ids[1]];
+      angles[key]=angle2({x:shoulder.x,y:shoulder.y+1},shoulder,image[ids[2]],frame.width,frame.height);
+      confidence[key]=angles[key]===null?0:Math.min(image[ids[1]].visibility!,image[ids[2]].visibility!);
+      continue;
+    }
     const valid = ids.every(i => visible(image[i]));
     const useWorld = ids.every(i => visible(world[i]) && Number.isFinite(world[i].z));
     const source = useWorld ? world : image;
