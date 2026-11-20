@@ -323,7 +323,7 @@ export function createBackend(options: Options = {}) {
     const u = identity(res);
     const rows = (u.role === 'staff' ? db.prepare('SELECT id,payload FROM events WHERE id < ? ORDER BY id DESC LIMIT ?').all(before,limit) : db.prepare('SELECT id,payload FROM events WHERE patient_id = ? AND id < ? ORDER BY id DESC LIMIT ?').all(u.id,before,limit)) as {id:number;payload: string}[];
     const counts = db.prepare(`SELECT count(*) AS total, coalesce(sum(CASE WHEN julianday(json_extract(payload, '$.completedAt')) >= julianday(?) THEN 1 ELSE 0 END), 0) AS weeklyTotal FROM events ${u.role === 'staff' ? '' : 'WHERE patient_id = ?'}`).get(new Date(Date.now()-7*86400000).toISOString(), ...(u.role === 'staff' ? [] : [u.id])) as {total: number; weeklyTotal: number};
-    res.json({events: rows.map(decode), ...counts, dailySets:dailyCounts(u.id), nextBefore:rows.length===limit?rows[rows.length-1].id:null});
+    res.json({events: rows.map(decode), ...counts, dailySets:dailyCounts(u.id),snapshotSeq:latestSeq(), nextBefore:rows.length===limit?rows[rows.length-1].id:null});
   });
   app.post('/api/devices', auth, staff, (req, res) => {
     const b = req.body;

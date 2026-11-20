@@ -101,7 +101,7 @@ function useSessionState() {
   const toast=toasts[0]?.message||'',toastId=toasts[0]?.id;
   const setToast=useCallback((message:string)=>setToasts(items=>message?[...items,{id:randomUUID(),message}]:items.slice(1)),[]);
   useEffect(()=>{if(!toastId)return;const timer=setTimeout(()=>setToasts(items=>items[0]?.id===toastId?items.slice(1):items),8000);return()=>clearTimeout(timer);},[toastId]);
-  const activeToken=useRef(token),knownEvents=useRef(new Set<string>()),snapshotSeq=useRef(0);
+  const activeToken=useRef(token),knownEvents=useRef(new Set<string>()),snapshotSeq=useRef(0),refreshVersion=useRef(0);
   activeToken.current=token;
   useEffect(() => {
     let active = true;
@@ -148,17 +148,19 @@ function useSessionState() {
   }, []);
   const refresh = useCallback(async () => {
     if (!token) return;
+    const version=++refreshVersion.current;
     try {
-      const data = await api<{ events: Event[]; total: number; weeklyTotal: number; dailySets:Record<string,number> }>(
+      const data = await api<{ events: Event[]; total: number; weeklyTotal: number; dailySets:Record<string,number>;snapshotSeq:number }>(
         base,
         "/api/events?limit=200",
         token,
       );
-      if(activeToken.current!==token)return;
+      if(activeToken.current!==token||version!==refreshVersion.current)return;
+      const fresh=data.snapshotSeq>=snapshotSeq.current;
       for(const e of data.events){knownEvents.current.add(e.id);snapshotSeq.current=Math.max(snapshotSeq.current,e.seq||0);}
       setEvents(current=>mergeEvents(data.events,current));
-      setTotal(t=>Math.max(t,data.total)); setWeeklyTotal(t=>Math.max(t,data.weeklyTotal));
-      setDailySets(current=>Object.fromEntries(Array.from(new Set([...Object.keys(current),...Object.keys(data.dailySets)])).map(id=>[id,Math.max(current[id]||0,data.dailySets[id]||0)])));
+      setTotal(t=>fresh?data.total:Math.max(t,data.total)); setWeeklyTotal(t=>fresh?data.weeklyTotal:Math.max(t,data.weeklyTotal));
+      setDailySets(current=>fresh?data.dailySets:Object.fromEntries(Array.from(new Set([...Object.keys(current),...Object.keys(data.dailySets)])).map(id=>[id,Math.max(current[id]||0,data.dailySets[id]||0)])));
       if (user?.role === "staff")
         setDevices(
           (await api<{ devices: Device[] }>(base, "/api/devices", token))
@@ -198,6 +200,7 @@ function useSessionState() {
       if (data.kind === "event") {
         if(!knownEvents.current.has(data.event.id) && data.event.seq>snapshotSeq.current){setTotal(t=>t+1);if(Date.now()-Date.parse(data.event.completedAt)<7*86400000)setWeeklyTotal(t=>t+1);}
         knownEvents.current.add(data.event.id);
+        snapshotSeq.current=Math.max(snapshotSeq.current,data.event.seq||0);
         void refresh();
         setEvents(current=>mergeEvents(current,[data.event]));
         const message = `${data.event.patientName} completed ${data.event.exerciseName} · ${data.event.reps} reps · set ${data.event.setNumber || 1}/${data.event.totalSets || 2}`;
@@ -264,8 +267,8 @@ function useSessionState() {
   async function saveBackend(url: string) {
     if (url && !/^https?:\/\/[^\s]+$/.test(url))
       throw new Error("Enter a full http:// or https:// URL.");
+    if (url !== setting && token && !(await logout())) throw new Error("Reconnect before changing the backend.");
     await AsyncStorage.setItem("mc-backend", url.replace(/\/$/, ""));
-    if (url !== setting && !(await logout())) throw new Error("Reconnect before changing the backend.");
     setSetting(url.replace(/\/$/, ""));
   }
   async function complete(
@@ -329,9 +332,8 @@ export function SessionProvider({ children }: React.PropsWithChildren) {
       {children}
       {((!state.ready && !!state.error)||state.offline||state.queuedCount>0) && <View accessibilityRole="alert" style={{position:"absolute",bottom:80,left:16,right:16,padding:12,backgroundColor:colors.paper,zIndex:101}}><Text>{!state.ready ? state.error : state.queuedCount>0 ? 'Saved on this device — will sync when back online' : 'Offline — reconnecting to your care team.'}</Text></View>}
       {!!state.toast && (
-        <Pressable
+        <View
           accessibilityRole="alert"
-          onPress={() => state.setToast("")}
           style={{
             position: "absolute",
             bottom: 92,
@@ -347,10 +349,10 @@ export function SessionProvider({ children }: React.PropsWithChildren) {
           <Text style={{ color: "white", fontWeight: "600" }}>
             {state.toast}
           </Text>
-          <Text style={{ color: "white", fontSize: 12, marginTop: 6 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss current update" onPress={()=>state.setToast('')}><Text style={{ color: "white", fontSize: 12, marginTop: 6 }}>
             Tap for next update · {state.toastCount} {state.toastCount===1?'update':'updates'} waiting
-          </Text>
-        </Pressable>
+          </Text></Pressable>
+        </View>
       )}
     </Context.Provider>
   );
