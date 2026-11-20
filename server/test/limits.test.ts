@@ -13,3 +13,11 @@ it('limits login, registration and pairing to ten attempts per IP per minute',as
     }
   } finally {await b.close();rmSync(dir,{recursive:true});}
 });
+it('shares throttle buckets across route casing and trailing slashes',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'mc-rate-case-')),b=createBackend({dataDir:dir});
+  try{
+    for(let i=0;i<10;i++)await request(b.app).post('/api/auth/login').send({}).expect(400);
+    await request(b.app).post('/API/AUTH/LOGIN/').send({}).expect(429);
+    await request(b.app).post('/Api/Auth/Login?retry=1').send({}).expect(429);
+  }finally{await b.close();rmSync(dir,{recursive:true});}
+});
