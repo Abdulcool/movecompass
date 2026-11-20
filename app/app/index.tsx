@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Image, Text, View } from "react-native";
-import { Redirect, router } from "expo-router";
+import { Redirect, Link } from "expo-router";
 import { useSession } from "../src/session";
 import { Button, Card, Copy, Field, Page, Title, s } from "../src/ui";
 import { FreeDemoBanner } from '../src/FreeDemoBanner';
@@ -130,11 +130,7 @@ export default function Login() {
             onPress={() => void submit()}
           />
         </Card>
-        <Button
-          title="Backend settings"
-          secondary
-          onPress={() => router.push("/settings")}
-        />
+        <Link href="/settings" style={[s.copy,{fontSize:14,textDecorationLine:'underline',alignSelf:'flex-start',paddingVertical:6}]}>Backend settings</Link>
       </View>
     </Page>
   );
