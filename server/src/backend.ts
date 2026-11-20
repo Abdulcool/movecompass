@@ -94,7 +94,7 @@ export function createBackend(options: Options = {}) {
   const broadcast = (message: unknown, patientId: string | null) => {
     for (const [socket, client] of clients) {
       if (client.user && client.user.exp * 1000 <= Date.now()) { socket.close(1008, 'Session expired'); continue; }
-      if (client.device || client.user?.role === 'staff' || client.user?.id === patientId) send(socket, message);
+      if ((client.device && client.device.patient_id === patientId) || client.user?.role === 'staff' || client.user?.id === patientId) send(socket, message);
     }
   };
   const expo = new Expo();

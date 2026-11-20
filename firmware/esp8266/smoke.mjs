@@ -39,15 +39,17 @@ try {
   transport.destroy(); await reconnected;
   console.log('PASS virtual ESP reconnects after transport loss');
   const other = await api('/api/auth/register', '', { email: 'other@example.test', password: 'test-password', name: 'Other Patient' });
-  const ignored = new Promise(resolve => sim.events.on('ignored', raw => {
-    if (JSON.parse(raw.toString())?.event?.patientId === other.user.id) resolve();
-  }));
+  let foreignReceived = false;
+  sim.events.on('ignored', raw => {
+    if (JSON.parse(raw.toString())?.event?.patientId === other.user.id) foreignReceived = true;
+  });
   const camera = { exerciseId: 'sit-to-stand', exerciseName: 'Supported sit-to-stand', reps: 6, source: 'camera', angles: { rightKnee: 93.9 } };
-  await api('/api/completions', other.token, camera); await ignored;
-  assert.equal(alerts, 0); console.log('PASS other patient completion ignored');
+  await api('/api/completions', other.token, camera);
   const finished = once(sim.events, 'finished');
   const { event } = await api('/api/completions', jane.token, camera);
   const [received] = await finished;
+  assert.equal(foreignReceived, false); assert.equal(alerts, 1);
+  console.log('PASS other patient completion not delivered');
   assert.equal(received.id, event.id); assert.equal(received.source, 'camera'); assert.equal(received.reps, 6);
   console.log('PASS POST camera completion → authenticated /ws → patient-matched flash pattern');
   const alert = once(sim.events, 'alert');

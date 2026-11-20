@@ -112,7 +112,7 @@ describe('completion contract and storage',()=>{
   });
 });
 describe('real websocket transport',()=>{
-  it('delivers app completion to staff, patient, ALL devices, and staff push tokens',async()=>{
+  it('delivers completion only to staff, owning patient and that patient devices',async()=>{
     const staff=await login('staff'), patient=await login();
     await request(backend.app).post('/api/auth/register').send({email:'board-owner@example.com',name:'Board Owner',password:'password123'}).expect(201);
     const first=await device(staff),second=await device(staff,'board-owner@example.com');
@@ -120,10 +120,13 @@ describe('real websocket transport',()=>{
     const deviceWs=await connect(`deviceId=${first.deviceId}&key=${first.deviceKey}`);
     const otherDeviceWs=await connect(`deviceId=${second.deviceId}&key=${second.deviceKey}`);
     await request(backend.app).post('/api/push/register').auth(staff,{type:'bearer'}).send({token:'ExponentPushToken[test-staff]'}).expect(201);
-    const received=[staffWs,patientWs,deviceWs,otherDeviceWs].map(ws=>message(ws,'event'));
+    const foreign: unknown[]=[]; otherDeviceWs.on('message',raw=>{const m=JSON.parse(raw.toString());if(m.kind==='event')foreign.push(m);});
+    const received=[staffWs,patientWs,deviceWs].map(ws=>message(ws,'event'));
     const response=await request(backend.app).post('/api/completions').auth(patient,{type:'bearer'}).send(completion);
     expect(response.status).toBe(201);
     for(const msg of await Promise.all(received))expect(msg.event.id).toBe(response.body.event.id);
+    const pong=once(otherDeviceWs,'pong');otherDeviceWs.ping();await pong;
+    expect(foreign).toEqual([]);
     expect(push[0][0].data).toMatchObject({event:{reps:6}});
     const list=await request(backend.app).get('/api/devices').auth(staff,{type:'bearer'});
     expect(list.body.devices.every((d:any)=>d.online&&d.lastSeen)).toBe(true);
