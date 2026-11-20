@@ -352,9 +352,9 @@ export function createBackend(options: Options = {}) {
     db.prepare('INSERT INTO push_tokens VALUES (?, ?, ?) ON CONFLICT(token) DO UPDATE SET user_id=excluded.user_id, role=excluded.role').run(req.body.token, u.id, u.role);
     res.status(201).json({ok: true});
   });
-  app.delete('/api/push/register', auth, (req, res) => {
+  app.delete('/api/push/register', throttle, (req, res) => {
     if (!object(req.body) || typeof req.body.token !== 'string' || !Expo.isExpoPushToken(req.body.token)) { res.status(400).json({error: 'A valid push token is required'}); return; }
-    db.prepare('DELETE FROM push_tokens WHERE token = ? AND user_id = ?').run(req.body.token, identity(res).id);
+    db.prepare('DELETE FROM push_tokens WHERE token = ?').run(req.body.token);
     res.json({ok: true});
   });
   server.on('upgrade', (req, socket, head) => {

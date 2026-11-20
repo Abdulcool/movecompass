@@ -42,6 +42,17 @@ beforeEach(async () => {
 afterEach(async()=>{for(const s of sockets)s.terminate();await backend.close();rmSync(dir,{recursive:true,force:true});});
 
 describe('auth and isolation',()=>{
+  it('unregisters by push-token possession after JWT revocation without touching other subscriptions',async()=>{
+    const jane=await login();
+    for(const token of ['ExponentPushToken[remove]','ExponentPushToken[keep]'])await request(backend.app).post('/api/push/register').auth(jane,{type:'bearer'}).send({token}).expect(201);
+    await request(backend.app).post('/api/auth/logout').auth(jane,{type:'bearer'}).send({}).expect(200);
+    await request(backend.app).delete('/api/push/register').send({}).expect(400);
+    await request(backend.app).delete('/api/push/register').send({token:'bad'}).expect(400);
+    await request(backend.app).delete('/api/push/register').auth(jane,{type:'bearer'}).send({token:'ExponentPushToken[remove]'}).expect(200);
+    await request(backend.app).delete('/api/push/register').send({token:'ExponentPushToken[remove]'}).expect(200);
+    expect(backend.db.prepare('SELECT token FROM push_tokens').all()).toEqual([{token:'ExponentPushToken[keep]'}]);
+    await request(backend.app).post('/api/push/register').send({token:'ExponentPushToken[anonymous]'}).expect(401);
+  });
   it('pushes to staff and the owning patient but never another patient',async()=>{
     const jane=await login(),staff=await login('staff');
     const other=await request(backend.app).post('/api/auth/register').send({email:'push-other@example.com',name:'Other',password:'password123'}).expect(201);

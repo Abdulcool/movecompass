@@ -1,7 +1,8 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { api } from "./api";
+import {registerPushSubscription} from './push-subscription';
+export {unregisterPushSubscription as unregisterNotifications} from './push-subscription';
 export async function enableNotifications(base: string, token: string) {
   if (Platform.OS === "web") {
     if (!("Notification" in window))
@@ -32,15 +33,8 @@ export async function enableNotifications(base: string, token: string) {
   if (!projectId)
     return "Local notifications enabled. Remote push needs an EAS project ID and a development build.";
   const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
-  await AsyncStorage.setItem("mc-push-token", data);
-  await api(base, "/api/push/register", token, { token: data });
-  await AsyncStorage.setItem("mc-push-registered", data);
+  await registerPushSubscription(base,token,data);
   return "Local notifications and remote push enabled.";
-}
-export async function unregisterNotifications(base: string, token: string) {
-  const push = await AsyncStorage.getItem("mc-push-token");
-  if (push) await api(base, "/api/push/register", token, { token: push }, "DELETE");
-  await AsyncStorage.multiRemove(["mc-push-token", "mc-push-registered"]);
 }
 export async function notify(body: string) {
   if (Platform.OS === "web") {

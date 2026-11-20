@@ -11,7 +11,7 @@ it('revokes and clears a valid local session',async()=>{
  await clearSession('https://example.test','jwt');expect(mocks.api).toHaveBeenCalledWith('https://example.test','/api/auth/logout','jwt',{});expect(mocks.remove).toHaveBeenCalledOnce();
 });
 it.each([401,403])('clears local auth when logout or unregister returns %i',async status=>{
- for(const failing of [mocks.unregister,mocks.api]){vi.resetAllMocks();failing.mockRejectedValue(new ApiError('Expired',status));await clearSession('https://example.test','jwt');expect(mocks.remove).toHaveBeenCalledWith(['mc-token','mc-user','mc-push-token','mc-push-registered']);}
+ for(const failing of [mocks.unregister,mocks.api]){vi.resetAllMocks();failing.mockRejectedValue(new ApiError('Expired',status));await clearSession('https://example.test','jwt');expect(mocks.remove).toHaveBeenCalledWith(['mc-token','mc-user','mc-push-token','mc-push-registered','mc-push-base']);}
 });
 it('retains credentials on a network failure for safe retry',async()=>{
  mocks.api.mockRejectedValue(new ApiError('Offline',0));await expect(clearSession('https://example.test','jwt')).rejects.toThrow('Offline');expect(mocks.remove).not.toHaveBeenCalled();

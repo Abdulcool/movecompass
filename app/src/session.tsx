@@ -13,6 +13,7 @@ import { AppState,Pressable,Text,View } from "react-native";
 import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
 import { notify } from "./notifications";
 import { clearSession } from './logout';
+import {retryPushUnregisters} from './push-subscription';
 import { colors } from "./ui";
 import { mergeEvents } from './event-history';
 import { wakeRetry } from './wake';
@@ -329,6 +330,13 @@ function useSessionState() {
 const Context = createContext<ReturnType<typeof useSessionState> | null>(null);
 export function SessionProvider({ children }: React.PropsWithChildren) {
   const state = useSessionState();
+  useEffect(()=>{
+    const retry=()=>{void retryPushUnregisters().catch(()=>{});};
+    retry();const timer=setInterval(retry,15000);
+    const active=AppState.addEventListener('change',state=>{if(state==='active')retry();});
+    if(typeof window!=='undefined')window.addEventListener('online',retry);
+    return()=>{clearInterval(timer);active.remove();if(typeof window!=='undefined')window.removeEventListener('online',retry);};
+  },[]);
   useEffect(()=>{if(typeof navigator!=='undefined' && 'serviceWorker' in navigator)void navigator.serviceWorker.register('/sw.js').catch(()=>{});},[]);
   return (
     <Context.Provider value={state}>
