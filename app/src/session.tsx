@@ -301,7 +301,7 @@ export function SessionProvider({ children }: React.PropsWithChildren) {
           onPress={() => state.setToast("")}
           style={{
             position: "absolute",
-            top: 48,
+            bottom: 92,
             right: 20,
             left: 20,
             alignSelf: "center",
