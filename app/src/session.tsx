@@ -14,6 +14,7 @@ import { api, ApiError, baseUrl, type User, type Event, type Device } from "./ap
 import { notify, unregisterNotifications } from "./notifications";
 import { colors } from "./ui";
 import { mergeEvents } from './event-history';
+import { wakeRetry } from './wake';
 function useLive(
   url: string,
   token: string,
@@ -95,6 +96,7 @@ function useSessionState() {
     [devices, setDevices] = useState<Device[]>([]),
     [toasts, setToasts] = useState<{id:string;message:string}[]>([]),
     [error, setError] = useState("");
+  const [authStatus,setAuthStatus]=useState('');
   const base = baseUrl(setting);
   const toast=toasts[0]?.message||'',toastId=toasts[0]?.id;
   const setToast=useCallback((message:string)=>setToasts(items=>message?[...items,{id:randomUUID(),message}]:items.slice(1)),[]);
@@ -226,12 +228,14 @@ function useSessionState() {
     role: User["role"],
     name?: string,
   ) {
-    const result = await api<{ token: string; user: User }>(
+    let result:{token:string;user:User};
+    try{result=await wakeRetry(timeout=>api<{ token: string; user: User }>(
       base,
       name ? "/api/auth/register" : "/api/auth/login",
       undefined,
       { email, password, role, ...(name ? { name } : {}) },
-    );
+      'POST',timeout,
+    ),()=>setAuthStatus('Waking the server…'));}finally{setAuthStatus('');}
     await AsyncStorage.setItem("mc-token", result.token);
     await AsyncStorage.setItem('mc-user',JSON.stringify(result.user));
     setUser(result.user);
@@ -304,6 +308,7 @@ function useSessionState() {
     queuedCount,
     devices,
     error,
+    authStatus,
     toast,
     toastCount:toasts.length,
     setToast,

@@ -26,6 +26,7 @@ export interface CompletionEvent {
 }
 interface Options {
   seedDemo?: boolean;
+  devicePairingSecret?:string;
   dataDir?: string; webDist?: string; jwtSecret?: string; allowUnregisteredDevices?: boolean;
   sendPush?: (messages: ExpoPushMessage[]) => Promise<void>;
 }
@@ -56,6 +57,8 @@ export function createBackend(options: Options = {}) {
     secret = readFileSync(secretFile, 'utf8').trim();
   }
   if (secret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
+  const pairingSecret=options.devicePairingSecret??process.env.DEVICE_PAIRING_SECRET;
+  if(pairingSecret&&pairingSecret.length<32)throw new Error('DEVICE_PAIRING_SECRET must be at least 32 characters');
   const allowLegacy = options.allowUnregisteredDevices ?? process.env.ALLOW_UNREGISTERED_DEVICES === 'true';
   const db = new Database(join(dataDir, 'movecompass.sqlite'));
   db.pragma('journal_mode = WAL'); db.pragma('foreign_keys = ON');
@@ -84,6 +87,26 @@ export function createBackend(options: Options = {}) {
     }
   }
   const deviceById = (id: string) => db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as Device | undefined;
+  const deviceCredential=(id:string,patientEmail:string)=>{
+    if(!pairingSecret)return randomBytes(32).toString('hex');
+    const payload=Buffer.from(JSON.stringify({deviceId:id,patientEmail,nonce:randomBytes(16).toString('hex')})).toString('base64url');
+    return `mc1.${payload}.${createHmac('sha256',pairingSecret).update(payload).digest('base64url')}`;
+  };
+  const recoverDevice=(id:string,key:unknown):Device|undefined=>{
+    const existing=deviceById(id);
+    if(existing)return keyMatches(key,existing.key_hash)?existing:undefined;
+    if(!pairingSecret||typeof key!=='string'||key.length>1024)return;
+    try{
+      const [version,payload,signature,extra]=key.split('.');if(version!=='mc1'||!payload||!signature||extra)return;
+      const expected=createHmac('sha256',pairingSecret).update(payload).digest('base64url');
+      if(signature.length!==expected.length||!timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))return;
+      const proof=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+      if(proof.deviceId!==id||!email(proof.patientEmail))return;
+      const owner=byEmail(proof.patientEmail);if(!owner||owner.role!=='patient')return;
+      db.prepare('INSERT INTO devices(id,name,patient_id,key_hash) VALUES (?, ?, ?, ?)').run(id,'Recovered board',owner.id,hash(key));
+      return deviceById(id);
+    }catch{return;}
+  };
   const codeHash = (code:string) => createHmac('sha256',secret).update(code).digest('hex');
   const pairingCode = (deviceId:string) => {
     db.prepare('DELETE FROM pairing_codes WHERE expires <= ? OR device_id = ?').run(Date.now(),deviceId);
@@ -114,7 +137,7 @@ export function createBackend(options: Options = {}) {
     if (++bucket.count > 10) { res.set('Retry-After', String(Math.ceil((bucket.expires - now) / 1000))).status(429).json({error: 'Too many attempts. Please wait a minute and try again.'}); return; }
     next();
   };
-  app.use(['/api/auth/login', '/api/auth/register', '/api/devices/pair'], throttle);
+  app.use(['/api/auth/login', '/api/auth/register', '/api/devices/pair', '/api/devices/recover'], throttle);
   const server = createServer(app);
   const wss = new WebSocketServer({noServer: true, maxPayload: 32768});
   const clients = new Map<WebSocket, Client>();
@@ -229,7 +252,7 @@ export function createBackend(options: Options = {}) {
       const row=db.prepare('SELECT device_id FROM pairing_codes WHERE code_hash = ? AND expires > ?').get(codeHash(req.body.code),Date.now()) as {device_id:string}|undefined;
       if(!row)return null;
       const device=deviceById(row.device_id);if(!device)return null;
-      const key=randomBytes(32).toString('hex');
+      const key=deviceCredential(device.id,byId(device.patient_id)!.email);
       db.prepare('UPDATE devices SET key_hash = ? WHERE id = ?').run(hash(key),device.id);
       db.prepare('DELETE FROM pairing_codes WHERE device_id = ?').run(device.id);
       for(const [socket,client] of clients)if(client.device?.id===device.id)socket.close(1008,'Device paired again');
@@ -237,6 +260,12 @@ export function createBackend(options: Options = {}) {
     })();
     if(!paired){res.status(400).json({error:'Pairing code is invalid, expired or already used. Ask your care team for a new code.'});return;}
     res.json(paired);
+  });
+  app.post('/api/devices/recover',(req,res)=>{
+    const b=req.body;
+    const device=object(b)&&text(b.deviceId)?recoverDevice(b.deviceId,b.key):undefined;
+    if(!device){res.status(401).json({error:'Pair again after your care team has recreated the patient account.'});return;}
+    touch(device.id);res.json({deviceId:device.id,key:b.key,patientId:device.patient_id});
   });
   app.post('/api/auth/logout', auth, (_req, res) => {
     const u = identity(res);
@@ -327,7 +356,7 @@ export function createBackend(options: Options = {}) {
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const user = verify(url.searchParams.get('token') ?? '');
-    const device = deviceById(url.searchParams.get('deviceId') ?? '');
+    const device = recoverDevice(url.searchParams.get('deviceId') ?? '',url.searchParams.get('key'));
     if (url.pathname !== '/ws' || (!user && (!device || !keyMatches(url.searchParams.get('key'), device.key_hash)))) { socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return; }
     const rawSince=url.searchParams.get('since'),since=rawSince===null?undefined:Number(rawSince);
     if(since!==undefined && (!Number.isSafeInteger(since)||since<0)){socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');return;}

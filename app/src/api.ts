@@ -40,9 +40,10 @@ export async function api<T>(
   token?: string,
   body?: unknown,
   method = body === undefined ? "GET" : "POST",
+  timeoutMs=12000,
 ): Promise<T> {
   if (!base) throw new Error("Set your backend URL in settings first.");
-  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),timeoutMs);
   let response: Response;
   try { response = await fetch(base + path, {
     method,

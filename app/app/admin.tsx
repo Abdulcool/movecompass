@@ -3,6 +3,7 @@ import { Platform, Text, View } from "react-native";
 import { Redirect, router } from "expo-router";
 import { getExercise } from "@movecompass/pose";
 import { useSession } from "../src/session";
+import { FreeDemoBanner } from '../src/FreeDemoBanner';
 import { api } from "../src/api";
 import { enableNotifications } from "../src/notifications";
 import { Button, Card, Copy, Field, Page, Title, s } from "../src/ui";
@@ -65,6 +66,7 @@ export default function Admin() {
     <Page>
       <Text style={s.eyebrow}>CCCARE STAFF · LIVE CARE</Text>
       <Title>Every small step, connected.</Title>
+      <FreeDemoBanner/>
       <View style={s.row}>
         <Copy>
           {session.connected ? "● Live connection online" : "○ Reconnecting…"}

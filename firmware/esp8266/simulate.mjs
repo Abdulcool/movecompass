@@ -79,7 +79,7 @@ export function createVirtualEsp({ backendUrl, deviceId, deviceKey, patientId, i
       if (stopped) return;
       log(`Backend disconnected; status LED slow blink; retry in ${backoff}ms`);
       events.emit('disconnected');
-      if(!paused)reconnectTimer = setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 30000);
+      if(!paused)reconnectTimer = setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60000);
     });
   }
   connect();

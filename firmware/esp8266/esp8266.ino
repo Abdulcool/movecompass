@@ -29,6 +29,8 @@ uint8_t alertHead = 0, alertCount = 0;
 String activeId;
 uint64_t activeSeq = 0, lastSeq = 0;
 bool hasCursor = false;
+bool credentialsReady = false;
+uint32_t credentialRetryAt = 0, credentialBackoff = 1000;
 
 bool due(uint32_t now, uint32_t deadline) {
   return static_cast<int32_t>(now - deadline) >= 0;
@@ -68,7 +70,7 @@ bool loadConfig() {
   backendUrl = doc["backend"] | DEFAULT_BACKEND_URL;
   deviceId = doc["deviceId"] | ""; deviceKey = doc["key"] | ""; patientId = doc["patientId"] | "";
   wifiSsid = doc["ssid"] | ""; wifiPassword = doc["password"] | "";
-  return parseBackend() && deviceId.length() && deviceKey.length() == 64 && patientId.length() && wifiSsid.length();
+  return parseBackend() && deviceId.length() && deviceKey.length() >= 32 && deviceKey.length() <= 1024 && patientId.length() && wifiSsid.length();
 }
 
 bool saveConfig() {
@@ -80,24 +82,29 @@ bool saveConfig() {
   return written == expected && LittleFS.rename("/config.tmp", "/config.json");
 }
 
-bool pairDevice(const String &code) {
-  if (!parseBackend() || code.length() != 6) return false;
-  for (unsigned int i = 0; i < code.length(); i++) if (!isDigit(code[i])) return false;
+int credentialRequest(const char *path, const String &body) {
+  if (!parseBackend()) return -1;
   WiFiClient plain; BearSSL::WiFiClientSecure secure;
   secure.setInsecure();
   WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
   HTTPClient http; http.setTimeout(12000);
-  if (!http.begin(client, backendUrl + "/api/devices/pair")) return false;
+  if (!http.begin(client, backendUrl + path)) return -1;
   http.addHeader("Content-Type", "application/json");
-  JsonDocument request; request["code"] = code; String body; serializeJson(request, body);
   const int status = http.POST(body);
-  if (status != 200) { http.end(); return false; }
+  if (status != 200) { http.end(); return status; }
   const String response = http.getString(); http.end();
-  if (response.length() > 2048) return false;
+  if (response.length() > 2048) return -1;
   JsonDocument doc;
-  if (deserializeJson(doc, response)) return false;
+  if (deserializeJson(doc, response)) return -1;
   deviceId = doc["deviceId"] | ""; deviceKey = doc["key"] | ""; patientId = doc["patientId"] | "";
-  return deviceId.length() && deviceKey.length() == 64 && patientId.length();
+  return deviceId.length() && deviceKey.length() >= 32 && deviceKey.length() <= 1024 && patientId.length() ? 200 : -1;
+}
+
+bool pairDevice(const String &code) {
+  if (code.length() != 6) return false;
+  for (unsigned int i = 0; i < code.length(); i++) if (!isDigit(code[i])) return false;
+  JsonDocument request; request["code"] = code; String body; serializeJson(request, body);
+  return credentialRequest("/api/devices/pair", body) == 200;
 }
 
 bool setupButtonHeld() {
@@ -213,7 +220,7 @@ void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
       backendConnected = false;
       socketClient.setReconnectInterval(socketBackoff);
       Serial.printf("Backend disconnected; retry in %lu ms\n", static_cast<unsigned long>(socketBackoff));
-      socketBackoff = min(socketBackoff * 2, static_cast<uint32_t>(30000));
+      socketBackoff = min(socketBackoff * 2, static_cast<uint32_t>(60000));
       break;
     case WStype_TEXT: completion(payload, length); break;
     default: break;
@@ -235,7 +242,16 @@ void updateWifi(uint32_t now) {
     if (!wifiConnected) {
       wifiConnected = true; wifiAttempt = false; wifiBackoff = 1000;
       Serial.print("WiFi connected: "); Serial.println(WiFi.localIP());
-      startBackend();
+      credentialsReady = false; credentialRetryAt = now;
+    }
+    if (!credentialsReady) {
+      if (!due(now, credentialRetryAt)) return;
+      JsonDocument request; request["deviceId"] = deviceId; request["key"] = deviceKey; String body; serializeJson(request, body);
+      const int status = credentialRequest("/api/devices/recover", body);
+      if (status == 200) { saveConfig(); credentialsReady = true; credentialBackoff = 1000; startBackend(); }
+      else if (status == 401 || status == 403) { Serial.println("Pairing lost: ask staff to recreate the account, then pair again"); configurePortal(); credentialRetryAt = millis(); }
+      else { credentialRetryAt = millis() + credentialBackoff; credentialBackoff = min(credentialBackoff * 2, static_cast<uint32_t>(60000)); Serial.println("Server sleeping or unavailable; will keep retrying"); }
+      return;
     }
     socketClient.loop();
     return;
@@ -251,7 +267,7 @@ void updateWifi(uint32_t now) {
   } else if (wifiAttempt && now - wifiStarted >= 15000) {
     WiFi.disconnect(); wifiAttempt = false; wifiRetryAt = now + wifiBackoff;
     Serial.printf("WiFi timeout; retry in %lu ms\n", static_cast<unsigned long>(wifiBackoff));
-    wifiBackoff = min(wifiBackoff * 2, static_cast<uint32_t>(30000));
+    wifiBackoff = min(wifiBackoff * 2, static_cast<uint32_t>(60000));
   }
 }
 

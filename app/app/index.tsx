@@ -3,6 +3,7 @@ import { Image, Text, View } from "react-native";
 import { Redirect, router } from "expo-router";
 import { useSession } from "../src/session";
 import { Button, Card, Copy, Field, Page, Title, s } from "../src/ui";
+import { FreeDemoBanner } from '../src/FreeDemoBanner';
 export default function Login() {
   const session = useSession();
   const [role, setRole] = useState<"patient" | "staff">("patient"),
@@ -56,6 +57,8 @@ export default function Login() {
         />
         <Text style={s.eyebrow}>MOVECOMPASS · CCCARE COMPANION</Text>
         <Title>Your next safe step.</Title>
+        <FreeDemoBanner/>
+        {!!session.authStatus && <Copy>{session.authStatus}</Copy>}
         <Copy>
           A little movement. A little encouragement. Care that stays connected.
         </Copy>
