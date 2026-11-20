@@ -44,6 +44,7 @@ const timestampValid = (v: unknown): v is string => {
   return month >= 1 && month <= 12 && day >= 1 && day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
 };
 const hash = (key: string) => createHash('sha256').update(key).digest('hex');
+const completionDateValid=(v:unknown):v is string=>timestampValid(v)&&Date.parse(v)>=Date.now()-7*86400000&&Date.parse(v)<=Date.now()+300000;
 const keyMatches = (key: unknown, expected: string) => typeof key === 'string' && timingSafeEqual(Buffer.from(hash(key)), Buffer.from(expected));
 const publicUser = (u: User, role = u.role) => ({ id: u.id, email: u.email, name: u.name, role });
 
@@ -298,7 +299,7 @@ export function createBackend(options: Options = {}) {
     if (!repsValid(b.reps)) errors.push('Reps must be a whole number from 1 to 100');
     if (typeof b.source !== 'string' || !['manual', 'camera'].includes(b.source)) errors.push('source must be manual or camera');
     if (b.clientId !== undefined && (typeof b.clientId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(b.clientId))) errors.push('A valid set identifier is required');
-    if (b.completedAt !== undefined && (typeof b.completedAt !== 'string' || !Number.isFinite(Date.parse(b.completedAt)) || Date.parse(b.completedAt)>Date.now()+300000))errors.push('Check the completion date and device clock');
+    if (b.completedAt !== undefined && !completionDateValid(b.completedAt))errors.push('Completion date must be within the last 7 days and no more than 5 minutes ahead');
     if (b.angles !== undefined && (!object(b.angles) || Object.entries(b.angles).some(([k, v]) => !text(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 360))) errors.push('angles must map joint names to finite ROM values from 0 to 360');
     if (errors.length) { res.status(400).json({errors}); return; }
     const user = byId(identity(res).id)!;
@@ -312,7 +313,7 @@ export function createBackend(options: Options = {}) {
     for (const key of ['deviceId', 'patientName']) if (!text(b[key])) errors.push(`${key} required`);
     if (!knownExercise(b.exerciseId)) errors.push('Choose an exercise from your plan');
     if (!repsValid(b.reps)) errors.push('Reps must be a whole number from 1 to 100');
-    if (!timestampValid(b.completedAt)) errors.push('completedAt must be an ISO8601 timestamp with timezone');
+    if (!completionDateValid(b.completedAt)) errors.push('completedAt must be an ISO8601 timestamp within the last 7 days and no more than 5 minutes ahead');
     const submissionKey=req.get('Idempotency-Key')??b.idempotencyKey;
     if(submissionKey!==undefined&&!text(submissionKey))errors.push('A non-empty idempotency key up to 200 characters is required');
     if (typeof b.transport !== 'string' || !['wifi', 'app', 'camera'].includes(b.transport)) errors.push('transport must be wifi, app or camera');

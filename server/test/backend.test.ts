@@ -96,6 +96,16 @@ describe('auth and isolation',()=>{
   });
 });
 describe('completion contract and storage',()=>{
+  it('rejects stale and future completion dates without logging a set',async()=>{
+    const token=await login();
+    for(const offset of [-8*86400000,6*60000]){
+      const completedAt=new Date(Date.now()+offset).toISOString();
+      await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send({...completion,completedAt}).expect(400);
+      await request(backend.app).post('/api/esp32/notify').send({...payload,completedAt}).expect(400);
+    }
+    expect((await request(backend.app).get('/api/events').auth(token,{type:'bearer'})).body.total).toBe(0);
+    await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send({...completion,completedAt:new Date(Date.now()-6*86400000).toISOString()}).expect(201);
+  });
   it('deduplicates authenticated device notify retries by idempotency key',async()=>{
     const staff=await login('staff'),d=await device(staff),data={...payload,deviceId:d.deviceId};
     const post=()=>request(backend.app).post('/api/esp32/notify').set('X-Device-Key',d.deviceKey).set('Idempotency-Key','board-set-1').send(data);
