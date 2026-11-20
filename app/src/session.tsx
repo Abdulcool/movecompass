@@ -93,9 +93,12 @@ function useSessionState() {
     [queuedCount, setQueuedCount] = useState(0),
     [offline, setOffline] = useState(false),
     [devices, setDevices] = useState<Device[]>([]),
-    [toast, setToast] = useState(""),
+    [toasts, setToasts] = useState<{id:string;message:string}[]>([]),
     [error, setError] = useState("");
   const base = baseUrl(setting);
+  const toast=toasts[0]?.message||'',toastId=toasts[0]?.id;
+  const setToast=useCallback((message:string)=>setToasts(items=>message?[...items,{id:randomUUID(),message}]:items.slice(1)),[]);
+  useEffect(()=>{if(!toastId)return;const timer=setTimeout(()=>setToasts(items=>items[0]?.id===toastId?items.slice(1):items),8000);return()=>clearTimeout(timer);},[toastId]);
   const activeToken=useRef(token),knownEvents=useRef(new Set<string>()),snapshotSeq=useRef(0);
   activeToken.current=token;
   useEffect(() => {
@@ -196,7 +199,7 @@ function useSessionState() {
         void refresh();
         setEvents(current=>mergeEvents(current,[data.event]));
         const message = `${data.event.patientName} completed ${data.event.exerciseName} · ${data.event.reps} reps · set ${data.event.setNumber || 1}/${data.event.totalSets || 2}`;
-        setToast(message);
+        setToasts(items=>items.some(item=>item.id===data.event.id)?items:[...items,{id:data.event.id,message}]);
         void notify(message).catch(() => {});
       }
       if (data.kind === "device")
@@ -250,7 +253,7 @@ function useSessionState() {
     setTotal(0); setWeeklyTotal(0);
     setEvents([]);
     setDevices([]);
-    setToast("");
+    setToasts([]);
     setQueuedCount(0);
     return true;
   }
@@ -302,6 +305,7 @@ function useSessionState() {
     devices,
     error,
     toast,
+    toastCount:toasts.length,
     setToast,
     connected,
     refresh,
@@ -339,7 +343,7 @@ export function SessionProvider({ children }: React.PropsWithChildren) {
             {state.toast}
           </Text>
           <Text style={{ color: "white", fontSize: 12, marginTop: 6 }}>
-            Tap to dismiss
+            Tap for next update · {state.toastCount} {state.toastCount===1?'update':'updates'} waiting
           </Text>
         </Pressable>
       )}
