@@ -9,7 +9,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from 'expo-crypto';
 import { enqueueSet, flushSets, outboxKey } from './outbox';
-import { Pressable, Text, View } from "react-native";
+import { AppState,Pressable,Text,View } from "react-native";
 import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
 import { notify, unregisterNotifications } from "./notifications";
 import { colors } from "./ui";
@@ -26,10 +26,11 @@ function useLive(
   const reconnect = useRef(onReconnect);
   reconnect.current = onReconnect;
   const [connected, setConnected] = useState(false);
+  const currentToken=useRef(token);currentToken.current=token;
   useEffect(() => {
     if (!token || !url || !cursorKey) return;
     let stopped = false;
-    let socket: WebSocket;
+    let socket: WebSocket|undefined;
     let timer: ReturnType<typeof setTimeout>;
     let attempt = 0;
     let cursor:number|undefined;
@@ -38,15 +39,18 @@ function useLive(
     function connect() {
       if(stopped || socket?.readyState===WebSocket.OPEN || socket?.readyState===WebSocket.CONNECTING)return;
       clearTimeout(timer);
-      socket = new WebSocket(
+      const connection = new WebSocket(
         url.replace(/^http/, "ws") + "/ws?token=" + encodeURIComponent(token)+(cursor===undefined?'':`&since=${cursor}`),
       );
-      socket.onopen = () => {
+      socket=connection;
+      connection.onopen = () => {
+        if(stopped||socket!==connection)return;
         attempt = 0;
         setConnected(true);
         reconnect.current();
       };
-      socket.onmessage = (e) => {
+      connection.onmessage = (e) => {
+        if(stopped||socket!==connection||currentToken.current!==token)return;
         try {
           const data=JSON.parse(e.data);
           if(data.kind==='ready'&&Number.isSafeInteger(data.seq)) {if(cursor!==undefined&&data.seq<cursor)handler.current({kind:'reset'});remember(data.seq);return;}
@@ -54,15 +58,17 @@ function useLive(
           handler.current(data);
         } catch {}
       };
-      socket.onerror = () => socket.close();
-      socket.onclose = () => {
+      connection.onerror = () => connection.close();
+      connection.onclose = () => {
+        if(socket!==connection)return;
         setConnected(false);
         if (!stopped)
           timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** attempt++));
       };
     }
     void AsyncStorage.getItem(cursorKey).then(raw=>{if(raw!==null && Number.isSafeInteger(Number(raw))&&Number(raw)>=0)cursor=Number(raw);if(!stopped)connect();}).catch(()=>{if(!stopped)connect();});
-    const online=()=>{attempt=0;connect();};
+    const online=()=>{attempt=0;clearTimeout(timer);const old=socket;socket=undefined;old?.close();connect();};
+    const foreground=AppState.addEventListener('change',state=>{if(state==='active')online();});
     if(typeof window!=='undefined')window.addEventListener('online',online);
     return () => {
       stopped = true;
@@ -70,6 +76,7 @@ function useLive(
       socket?.close();
       setConnected(false);
       if(typeof window!=='undefined')window.removeEventListener('online',online);
+      foreground.remove();
     };
   }, [url, token,cursorKey]);
   return connected;
