@@ -2,11 +2,12 @@
 
 Your next safe step. Cross-platform (iOS, Android, web) exercise companion with camera-based joint-angle tracking.
 
-Use Node 20 (`nvm use`), then `npm install`.
+Use Node 22 (`nvm use`), then `npm install` (Expo SDK 58 requires Node 22.13+).
 Run `npm test -w packages/pose` and `npm run typecheck`.
 
 `packages/pose` is a DOM-free TypeScript tracking engine shared by future camera
-surfaces. The backend is in `server`; app and firmware are not implemented yet.
+surfaces. The backend is in `server`; the Expo shell is in `app`. Camera tracking,
+the 3D body selector and firmware are not implemented yet.
 
 `createTracker(id).update(frame)` accepts one MediaPipe pose (flat or nested arrays),
 timestamps in milliseconds and image dimensions. World-space angles are preferred;
@@ -32,7 +33,28 @@ Run `npm test -w server` for isolated SQLite + real WebSocket integration tests.
 See [server/README.md](server/README.md) for the API contract and configuration.
 
 `docker build -t movecompass .` builds the server and exports the Expo web app
-when `app/package.json` exists. Until then, `/healthz` and API routes work, while
-web routes return 404. Render's blueprint mounts a persistent disk at `/var/data`.
+when `app/package.json` exists. Render's blueprint mounts a persistent disk at `/var/data`.
 This is demo infrastructure: rotate seed passwords, disable unregistered devices,
 and add deployment-specific abuse controls before handling real patient data.
+
+## App shell (Expo SDK 58)
+
+`npm run build:web -w app` exports `app/dist`. Start the server with an absolute
+`WEB_DIST` pointing to that directory, then open port 8080. Web uses same-origin
+HTTP and WebSocket requests. Native uses `EXPO_PUBLIC_API_URL` or the URL saved in
+Settings; use a reachable HTTPS host, not your phone's localhost.
+`npm start -w app` starts Expo for native development. Auth uses AsyncStorage
+(localStorage on web); device keys are only shown after registration, not persisted.
+
+Profile (or the staff dashboard) enables notifications on explicit request.
+Remote native push requires a real device, an EAS project ID under
+`expo.extra.eas.projectId`, and an appropriate development/production build.
+Without that ID, local native notifications still work after permission is granted.
+Do not treat the camera placeholder as actual tracking: it never generates reps.
+`BodyPicker` exposes region selection; `PoseTrackerProps` defines the replacement
+boundary for the next tracking step. Manual completion remains available.
+
+Run `npm test -w app` for API client tests. With the exported app served by the
+backend, run `APP_URL=http://127.0.0.1:8080 npm run test:e2e -w app` for the real
+two-session browser check. It writes screenshots to `~/work/shots` by default.
+Use a fresh demo database: the test expects an empty inbox and records activities.

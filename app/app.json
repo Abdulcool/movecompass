@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "MoveCompass",
+    "slug": "movecompass",
+    "scheme": "movecompass",
+    "icon": "./assets/icon.png",
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      "expo-image",
+      "expo-status-bar"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ca.cccare.movecompass"
+    },
+    "android": {
+      "package": "ca.cccare.movecompass"
+    }
+  }
+}

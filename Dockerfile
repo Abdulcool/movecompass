@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY . .
@@ -7,7 +7,7 @@ RUN if [ -f app/package.json ]; then cd app && npx expo export --platform web; f
 RUN npm run build -w server
 RUN mkdir -p app/dist
 
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 ENV NODE_ENV=production PORT=8080 DATA_DIR=/var/data WEB_DIST=/workspace/app/dist
 WORKDIR /workspace
 COPY --from=build /workspace/node_modules ./node_modules
