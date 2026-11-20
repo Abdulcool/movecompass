@@ -5,7 +5,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { createHash, createHmac, randomInt, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { resolve, join,extname } from 'node:path';
 import { createServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Expo, type ExpoPushMessage } from 'expo-server-sdk';
@@ -405,7 +405,7 @@ export function createBackend(options: Options = {}) {
   app.get([/^\/tracker\/assets\/[a-f0-9]{16}\/[A-Za-z0-9_.-]+$/,/^\/_expo\/static\/js\/web\/[A-Za-z0-9_-]+\.js$/],(req,res,next)=>{
     const path=resolve(webDist,`.${req.path}`),encoding=req.acceptsEncodings('br','gzip','identity'),suffix=encoding==='br'?'.br':encoding==='gzip'?'.gz':'';
     res.vary('Accept-Encoding');
-    if(suffix&&existsSync(path+suffix)){res.set({'Content-Encoding':encoding as string,'Cache-Control':'public, max-age=31536000, immutable'}).type(path).sendFile(path+suffix);return;}
+    if(suffix&&existsSync(path+suffix)){res.set({'Content-Encoding':encoding as string,'Cache-Control':'public, max-age=31536000, immutable'}).type(extname(path)).sendFile(path+suffix);return;}
     next();
   });
   app.use(express.static(webDist,{setHeaders:(res,path)=>{if(/\/tracker\/(?:assets\/[a-f0-9]{16}\/|main-[a-f0-9]{16}\.js$)/.test(path))res.setHeader('Cache-Control','public, max-age=31536000, immutable');}}));

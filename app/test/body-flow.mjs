@@ -24,6 +24,7 @@ try {
   await page.mouse.click(box.x + 8, box.y + 8);
   await page.waitForTimeout(1500);
   async function clickPoint(x, y, z = .12) {
+    await canvas.scrollIntoViewIfNeeded();
     const live = await page.evaluate(() => window.__MOVE_BODY_TEST__.camera());
     console.log("Live camera at click:", JSON.stringify(live.position), "(home: [0,1.15,3.6])");
     const p = await page.evaluate(target => window.__MOVE_BODY_TEST__.project(target), [x, y, z]);
