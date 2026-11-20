@@ -1,4 +1,4 @@
-import {visible,type Landmark} from '@movecompass/pose';
+import {visibleInFrame as visible,type Landmark} from '@movecompass/pose';
 type Point={x:number;y:number};
 function describe(points:Landmark[]){
   const valid=points.filter(visible);if(valid.length<3)return null;

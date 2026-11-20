@@ -1,5 +1,5 @@
 import { PoseLandmarker } from "@mediapipe/tasks-vision";
-import { createTracker, getExercise, joints, visible } from "@movecompass/pose";
+import { createTracker, getExercise, joints, visibleInFrame as visible } from "@movecompass/pose";
 import { angleSummary, relevantJoints, rangeProgress } from "./metrics";
 import { setProgress } from './progress';
 import { cameraGuidance } from '../src/camera-errors';
@@ -248,16 +248,12 @@ async function start() {
               ctx.fillText(label, left, top);
             }
           }
-          const low =
-            output.metric === null ||
-            keys.some((key) => output.angles[key] === null);
           const countLabel=`${current.reps} / ${target}`;
           if(el('counter').textContent!==countLabel)el('counter').textContent=countLabel;
           if(el('phase').textContent!==output.phase)el('phase').textContent=output.phase;
-          if(el('feedback').textContent!==output.feedback)el('feedback').textContent=output.feedback;
-          el("visibility").textContent = low
-            ? "Low visibility — step back so your whole body is in view"
-            : "";
+          const feedback=output.missing.length?'':output.feedback;
+          if(el('feedback').textContent!==feedback)el('feedback').textContent=feedback;
+          el('visibility').textContent=output.missing.length?output.feedback:'';
           const range = rangeProgress(output.metric, exercise.tracking);
           el("progress").style.width = `${range}%`;
           document

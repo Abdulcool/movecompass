@@ -1,4 +1,5 @@
-import { extractAngles, flatten, visible, type Landmark, type PoseFrame } from './angles';
+import { extractAngles, flatten, visible,visibleInFrame, type Landmark, type PoseFrame } from './angles';
+import {missingBodyParts} from './visibility';
 import { OneEuroFilter } from './filter';
 import { getExercise } from './exercises';
 import { RepCounter } from './counter';
@@ -7,6 +8,7 @@ export * from './math';
 export * from './filter';
 export * from './exercises';
 export * from './counter';
+export * from './visibility';
 
 export function createTracker(exerciseId: string) {
   const exercise = getExercise(exerciseId);
@@ -16,7 +18,7 @@ export function createTracker(exerciseId: string) {
   let baseline: number | null = null;
   let calibration: {time: number; value: number}[] = [];
   const smooth = (points: Landmark[], prefix: string, timestamp: number) => points.map((p, i) => {
-    if (!visible(p)) { for (const axis of ['x', 'y', 'z']) filters.delete(`${prefix}${i}${axis}`); return p; }
+    if (!(prefix==='i'?visibleInFrame(p):visible(p))) { for (const axis of ['x', 'y', 'z']) filters.delete(`${prefix}${i}${axis}`); return p; }
     const out = {...p};
     for (const axis of ['x', 'y', 'z'] as const) {
       if (p[axis] === undefined) continue;
@@ -27,7 +29,7 @@ export function createTracker(exerciseId: string) {
     return out;
   });
   const empty = () => extractAngles({landmarks: [], timestampMs: 0, width: 1, height: 1});
-  let output = { ...empty(), metric: null as number | null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: counter.lastRep };
+  let output = { ...empty(), missing:[] as string[],metric: null as number | null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: counter.lastRep };
   return {
     update(frame: PoseFrame) {
       if (!Number.isFinite(frame.timestampMs) || frame.timestampMs <= time) return output;
@@ -56,11 +58,12 @@ export function createTracker(exerciseId: string) {
         metric = baseline === null ? null : metric - baseline;
       }
       if (exercise.tracking.metric(result.angles, p, frame.width, frame.height, result.confidence) !== null) validTime = time;
-      const form = exercise.tracking.formChecks.find(check => check.test(result.angles))?.message ?? '';
+      const missing=missingBodyParts(exerciseId,p);
+      const form = metric===null||missing.length?'':exercise.tracking.formChecks.find(check => check.test(result.angles))?.message ?? '';
       counter.update(metric, time, form);
-      output = {...result, metric, reps: counter.reps, phase: counter.phase, feedback: calibrating ? 'Stand still for one second to calibrate' : counter.feedback, lastRep: counter.lastRep};
+      output = {...result,missing, metric, reps: counter.reps, phase: counter.phase, feedback: missing.length?`Can't see your ${missing.join(' and ')} — adjust the camera.`:calibrating ? 'Stand still for one second to calibrate' : counter.feedback, lastRep: counter.lastRep};
       return output;
     },
-    reset() { counter = new RepCounter(exercise.tracking); filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; output = {...empty(), metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
+    reset() { counter = new RepCounter(exercise.tracking); filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; output = {...empty(),missing:[], metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
   };
 }

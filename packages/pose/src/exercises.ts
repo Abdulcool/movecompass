@@ -1,4 +1,4 @@
-import { type Angles, type Confidence, type Landmark, visible } from './angles';
+import { type Angles, type Confidence, type Landmark, visibleInFrame as visible } from './angles';
 export interface FormCheck { test: (a: Angles) => boolean; message: string }
 export interface Tracking {
   metric: (a: Angles, p: Landmark[], width: number, height: number, confidence?: Confidence) => number | null;
