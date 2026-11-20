@@ -181,6 +181,7 @@ function useSessionState() {
     try {
       const result=await flushSets(outboxKey(base,user.id),item=>api<{event:Event}>(base,'/api/completions',token,item));
       setQueuedCount(result.pending);
+      if(result.rejected.length)setToast(`${result.rejected.length} saved set(s) couldn't sync. They are kept on this device for review. Please contact your care team.`);
       if(result.sent.length){setEvents(es=>[...result.sent,...es.filter(e=>!result.sent.some(s=>s.id===e.id))]);void refresh();}
       if(result.error){setOffline(result.error.status===0 || result.error.status>=500);setError(result.error.message);}
     }catch {setError("This device couldn't read your saved sets. Please contact your care team before clearing app data.");}
@@ -291,6 +292,7 @@ function useSessionState() {
     });
     const result=await flushSets(key,item=>api<{event:Event}>(base,'/api/completions',token,item));
     setQueuedCount(result.pending);
+    if(result.rejected.some(item=>item.clientId===clientId))throw new Error("This set couldn't sync. It is kept on this device for review. Please contact your care team.");
     const event=result.sent.find(e=>e.exerciseId===exercise.id);
     if(!event){setOffline(!result.error || result.error.status===0 || result.error.status>=500);return {queued:true as const};}
     setEvents((es) => [event, ...es.filter((e) => e.id !== event.id)]);

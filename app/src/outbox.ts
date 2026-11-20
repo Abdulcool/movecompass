@@ -20,14 +20,22 @@ export function enqueueSet(key:string,item:PendingSet) {
 }
 export function flushSets(key:string,post:(item:PendingSet)=>Promise<{event:Event}>) {
   return exclusive(key,async()=>{
-    let items=await read(key);const sent:Event[]=[];
+    let items=await read(key);const sent:Event[]=[],rejected:PendingSet[]=[];
     while(items.length) {
-      try {const item=items[0],{event}=await post(item);sent.push(event);items=(await read(key)).filter(i=>i.clientId!==item.clientId);await AsyncStorage.setItem(key,JSON.stringify(items));}
+      const item=items[0];
+      try {const {event}=await post(item);sent.push(event);items=(await read(key)).filter(i=>i.clientId!==item.clientId);await AsyncStorage.setItem(key,JSON.stringify(items));}
       catch(error) {
-        if(error instanceof ApiError)return {sent,pending:items.length,error};
+        if(error instanceof ApiError){
+          if(error.status>=400&&error.status<500&&![401,408,429].includes(error.status)){
+            const dead=await read(key+':rejected');
+            await AsyncStorage.setItem(key+':rejected',JSON.stringify([...dead.filter(i=>i.clientId!==item.clientId),{...item,rejection:error.message}]));
+            rejected.push(item);items=(await read(key)).filter(i=>i.clientId!==item.clientId);await AsyncStorage.setItem(key,JSON.stringify(items));continue;
+          }
+          return {sent,rejected,pending:items.length,error};
+        }
         throw error;
       }
     }
-    return {sent,pending:0,error:undefined};
+    return {sent,rejected,pending:0,error:undefined};
   });
 }
