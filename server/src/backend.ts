@@ -175,7 +175,7 @@ export function createBackend(options: Options = {}) {
   app.get('/healthz', (_req, res) => { db.prepare('SELECT 1').get(); res.json({ok: true}); });
   app.post('/api/auth/register', async (req, res) => {
     const b = req.body;
-    if (!object(b) || !email(b.email) || !text(b.name) || typeof b.password !== 'string' || Buffer.byteLength(b.password) < 8 || Buffer.byteLength(b.password) > 72 || (b.role !== undefined && b.role !== 'patient')) {
+    if (!object(b) || !email(b.email) || !text(b.name) || typeof b.password !== 'string' || Array.from(b.password).length < 8 || Buffer.byteLength(b.password) > 72 || (b.role !== undefined && b.role !== 'patient')) {
       res.status(400).json({errors: ['Enter your name and a valid email. Choose a password with at least 8 characters. Staff accounts are provided by your care team.']}); return;
     }
     if (byEmail(b.email)) { res.status(409).json({error: 'Email already registered'}); return; }

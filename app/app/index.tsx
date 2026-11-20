@@ -107,7 +107,7 @@ export default function Login() {
           />
           {create && (
             <Copy>
-              New patient accounts need a password of at least 8 bytes.
+              Choose a password with at least 8 characters for your new patient account.
             </Copy>
           )}
           {!!error && (
