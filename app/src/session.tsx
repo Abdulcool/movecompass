@@ -18,12 +18,14 @@ import {retryPushUnregisters} from './push-subscription';
 import { colors } from "./ui";
 import { mergeEvents } from './event-history';
 import { wakeRetry } from './wake';
+import {replayFrom,markToastShown} from './unread-toasts';
 function useLive(
   url: string,
   token: string,
   cursorKey: string,
   onMessage: (data: any) => void,
   onReconnect: () => void,
+  shownKey='',
 ) {
   const handler = useRef(onMessage);
   handler.current = onMessage;
@@ -70,7 +72,7 @@ function useLive(
           timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** attempt++));
       };
     }
-    void AsyncStorage.getItem(cursorKey).then(raw=>{if(raw!==null && Number.isSafeInteger(Number(raw))&&Number(raw)>=0)cursor=Number(raw);if(!stopped)connect();}).catch(()=>{if(!stopped)connect();});
+    void Promise.all([AsyncStorage.getItem(cursorKey),shownKey?AsyncStorage.getItem(shownKey):Promise.resolve(null)]).then(([raw,shown])=>{if(shownKey)cursor=replayFrom(raw,shown);else if(raw!==null && Number.isSafeInteger(Number(raw))&&Number(raw)>=0)cursor=Number(raw);if(!stopped)connect();}).catch(()=>{if(shownKey)cursor=0;if(!stopped)connect();});
     const online=()=>{attempt=0;clearTimeout(timer);const old=socket;socket=undefined;old?.close();connect();};
     const foreground=AppState.addEventListener('change',state=>{if(state==='active')online();});
     if(typeof window!=='undefined')window.addEventListener('online',online);
@@ -82,7 +84,7 @@ function useLive(
       if(typeof window!=='undefined')window.removeEventListener('online',online);
       foreground.remove();
     };
-  }, [url, token,cursorKey]);
+  }, [url, token,cursorKey,shownKey]);
   return connected;
 }
 function useSessionState() {
@@ -97,10 +99,18 @@ function useSessionState() {
     [queuedCount, setQueuedCount] = useState(0),
     [offline, setOffline] = useState(false),
     [devices, setDevices] = useState<Device[]>([]),
-    [toasts, setToasts] = useState<{id:string;message:string}[]>([]),
+    [toasts, setToasts] = useState<{id:string;message:string;seq?:number}[]>([]),
     [error, setError] = useState("");
   const [authStatus,setAuthStatus]=useState('');
   const base = baseUrl(setting);
+  const shownKey=user?.role==='staff'?`mc-last-shown:${base}:${user.id}`:'';
+  const [foreground,setForeground]=useState(true);
+  useEffect(()=>{
+    const update=()=>setForeground((typeof document==='undefined'||document.visibilityState==='visible')&&(!AppState.currentState||AppState.currentState==='active'));
+    update();const listener=AppState.addEventListener('change',update);
+    if(typeof document!=='undefined')document.addEventListener('visibilitychange',update);
+    return()=>{listener.remove();if(typeof document!=='undefined')document.removeEventListener('visibilitychange',update);};
+  },[]);
   const authoritativeDaily=useRef<Record<string,number>>({});
   async function updateDailySets(counts?:Record<string,number>,fresh=true){
     if(counts)authoritativeDaily.current=fresh?counts:Object.fromEntries(Array.from(new Set([...Object.keys(authoritativeDaily.current),...Object.keys(counts)])).map(id=>[id,Math.max(authoritativeDaily.current[id]||0,counts[id]||0)]));
@@ -110,7 +120,9 @@ function useSessionState() {
   }
   const toast=toasts[0]?.message||'',toastId=toasts[0]?.id;
   const setToast=useCallback((message:string)=>setToasts(items=>message?[...items,{id:randomUUID(),message}]:items.slice(1)),[]);
-  useEffect(()=>{if(!toastId)return;const timer=setTimeout(()=>setToasts(items=>items[0]?.id===toastId?items.slice(1):items),8000);return()=>clearTimeout(timer);},[toastId]);
+  useEffect(()=>{if(!toastId||!foreground)return;const timer=setTimeout(()=>setToasts(items=>items[0]?.id===toastId?items.slice(1):items),8000);return()=>clearTimeout(timer);},[toastId,foreground]);
+  const shownSeq=toasts[0]?.seq;
+  useEffect(()=>{if(shownKey&&shownSeq!==undefined&&foreground)void markToastShown(shownKey,shownSeq).catch(()=>{});},[shownKey,shownSeq,toastId,foreground]);
   const activeToken=useRef(token),knownEvents=useRef(new Set<string>()),snapshotSeq=useRef(0),refreshVersion=useRef(0);
   activeToken.current=token;
   useEffect(() => {
@@ -216,7 +228,7 @@ function useSessionState() {
         void refresh();
         setEvents(current=>mergeEvents(current,[data.event]));
         const message = `${data.event.patientName} completed ${data.event.exerciseName} · ${data.event.reps} reps · set ${data.event.setNumber || 1}/${data.event.totalSets || 2}`;
-        setToasts(items=>items.some(item=>item.id===data.event.id)?items:[...items,{id:data.event.id,message}]);
+        setToasts(items=>items.some(item=>item.id===data.event.id)?items:[...items,{id:data.event.id,message,seq:data.event.seq}]);
         void notify(message).catch(() => {});
       }
       if (data.kind === "device")
@@ -236,6 +248,7 @@ function useSessionState() {
       void refresh();
       void syncQueued();
     },
+    shownKey,
   );
   async function authenticate(
     email: string,
