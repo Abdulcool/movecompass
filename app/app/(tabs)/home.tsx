@@ -28,7 +28,8 @@ export default function Home() {
           onPress={() => router.push("/(tabs)/plan")}
         />
       </Card>
-      <Text style={s.heading}>Your next safe step</Text>
+      <Text style={s.heading}>{count===daily.length?'All done for today':'Your next safe step'}</Text>
+      {count===daily.length && <Copy>You’ve completed all your planned sets. Rest, recover and follow your care team’s advice.</Copy>}
       {daily.map((e) => (
         <ExerciseCard key={e.id} exercise={e} />
       ))}
