@@ -1,7 +1,7 @@
 import React from "react";
 import { Ionicons } from '@expo/vector-icons';
 import { View } from 'react-native';
-import { BottomTabBar } from 'expo-router/layouts/Tabs';
+import { BottomTabBar } from 'expo-router/tabs';
 import { Redirect, Tabs } from "expo-router";
 import { useSession } from "../../src/session";
 import { colors, Copy, Page } from "../../src/ui";
