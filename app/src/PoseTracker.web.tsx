@@ -14,6 +14,7 @@ export function PoseTracker({
 }: PoseTrackerProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState("");
+  const [height,setHeight]=useState(790);
   const seed=useRef({reps:initialReps,angles:initialAngles}),latest=useRef(seed.current);
   useEffect(() => {
     function receive(event: MessageEvent) {
@@ -23,6 +24,7 @@ export function PoseTracker({
       )
         return;
       const message = parseTrackerMessage(event.data);
+      if(message?.type==='resize')setHeight(message.height+8);
       if (message?.type === "rep") {latest.current={reps:message.reps,angles:message.angles||latest.current.angles};onRep(message.reps, message.lastRep, message.angles);}
       if (message?.type === "complete" && message.reps >= target)
         onComplete(message.reps, message.angles);
@@ -39,7 +41,7 @@ export function PoseTracker({
         title="Live pose tracking"
         src={`/tracker.html?exercise=${encodeURIComponent(exerciseId)}&target=${target}&reps=${seed.current.reps}&angles=${encodeURIComponent(JSON.stringify(seed.current.angles))}`}
         allow="camera"
-        style={{ width: "100%", height: 790, border: 0, borderRadius: 20 }}
+        style={{ width: "100%", height, border: 0, borderRadius: 20 }}
       />
       {!!error && <Copy>{error}</Copy>}
     </>

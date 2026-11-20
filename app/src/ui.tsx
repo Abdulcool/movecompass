@@ -2,6 +2,7 @@ import React from "react";
 import { useIsFocused } from "expo-router";
 import {
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +19,7 @@ export const colors = {
   coral: "#E78367",
   line: "#E4E9E4",
 };
+export const textSize=(size:number)=>(Platform.OS==='web'?`${size/16}rem`:size) as number;
 export function Page({ children,scrollRef }: React.PropsWithChildren<{scrollRef?:React.RefObject<ScrollView|null>}>) {
   const focused = useIsFocused();
   if (!focused) return null;
@@ -62,7 +64,9 @@ export function Button({
       <Text
         style={{
           color: secondary ? colors.green : "white",
-          fontSize: 16,
+          fontSize: textSize(16),
+          flexShrink:1,
+          textAlign:'center',
           fontWeight: "600",
         }}
       >
@@ -95,12 +99,12 @@ export const s = StyleSheet.create({
     paddingBottom: 60,
   },
   title: {
-    fontSize: 32,
+    fontSize: textSize(32),
     fontWeight: "700",
     color: colors.ink,
     letterSpacing: -0.8,
   },
-  copy: { fontSize: 16, lineHeight: 25, color: colors.muted },
+  copy: { fontSize: textSize(16), lineHeight: textSize(25), color: colors.muted },
   card: {
     backgroundColor: "white",
     borderRadius: 22,
@@ -110,6 +114,8 @@ export const s = StyleSheet.create({
     borderColor: colors.line,
   },
   button: {
+    maxWidth:'100%',
+    flexShrink:1,
     paddingVertical: 16,
     paddingHorizontal: 22,
     borderRadius: 16,
@@ -123,11 +129,11 @@ export const s = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: 12,
     padding: 15,
-    fontSize: 16,
+    fontSize: textSize(16),
     backgroundColor: "white",
     color: colors.ink,
   },
-  label: { fontSize: 14, fontWeight: "600", color: colors.ink },
+  label: { fontSize: textSize(14), fontWeight: "600", color: colors.ink },
   row: {
     flexDirection: "row",
     gap: 12,
@@ -135,11 +141,11 @@ export const s = StyleSheet.create({
     alignItems: "center",
   },
   eyebrow: {
-    fontSize: 12,
+    fontSize: textSize(12),
     fontWeight: "700",
     letterSpacing: 2,
     color: colors.green,
   },
-  error: { color: "#A03728", fontSize: 15 },
-  heading: { fontSize: 21, fontWeight: "600", color: colors.ink },
+  error: { color: "#A03728", fontSize: textSize(15) },
+  heading: { fontSize: textSize(21), fontWeight: "600", color: colors.ink },
 });

@@ -9,6 +9,7 @@ export interface PoseTrackerProps {
   target: number;
 }
 export type TrackerMessage =
+  | {type:'resize';height:number}
   | { type: "rep"; reps: number; lastRep?: Rep; angles?: Record<string,number> }
   | { type: "complete"; reps: number; angles: Record<string, number> }
   | { type: "error"; message: string };
@@ -22,6 +23,7 @@ export function parseTrackerMessage(value: unknown): TrackerMessage | null {
   }
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
+  if(v.type==='resize'&&typeof v.height==='number'&&Number.isFinite(v.height)&&v.height>=200&&v.height<=5000)return {type:'resize',height:Math.ceil(v.height)};
   if (v.type === "error" && typeof v.message === "string")
     return { type: "error", message: v.message };
   if (!Number.isInteger(v.reps) || Number(v.reps) < 0 || Number(v.reps) > 10000)

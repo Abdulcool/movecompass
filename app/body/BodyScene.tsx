@@ -2,7 +2,7 @@ import React, { Component, Suspense, useEffect, useMemo, useRef, useState } from
 import { Canvas, useFrame, useLoader, useThree, type ThreeEvent } from "@react-three/fiber";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { Mesh, MeshPhysicalMaterial, Raycaster, Vector2, Vector3, type BufferGeometry } from "three";
+import { Mesh, MeshPhysicalMaterial, PerspectiveCamera,Raycaster,Vector2,Vector3,type BufferGeometry } from "three";
 import { regionAt, regionNumber, regionShader, type BodyPickerProps } from "./regions";
 declare global { interface Window { __MOVE_BODY_TEST__?: { ready?: boolean; project?: (target: number[]) => { x: number; y: number; point: number[] }; camera?: () => { position: number[]; projection: number[]; world: number[] } } } }
 
@@ -72,7 +72,8 @@ function Human({ value, onChange, onHover, onReady }: BodyPickerProps & { onHove
     onPointerOut={() => { setHover(""); onHover(""); }} />;
 }
 function Controls({ touched }: { touched: React.RefObject<boolean> }) {
-  const { camera, gl, invalidate } = useThree();
+  const { camera, gl, invalidate,size } = useThree();
+  useEffect(()=>{if(camera instanceof PerspectiveCamera){camera.fov=Math.max(38,Math.min(110,2*Math.atan(1.05/(3.6*(size.width/size.height)))*180/Math.PI));camera.updateProjectionMatrix();}},[camera,size.width,size.height]);
   useEffect(() => {
     const hook = window.__MOVE_BODY_TEST__;
     if (!hook) return;
@@ -105,7 +106,7 @@ export function BodyScene(props: BodyPickerProps & {onReady?:()=>void}) {
   const ready=()=>{setLoaded(true);props.onReady?.();};
   return <SceneBoundary><div role="group" aria-label="Interactive 3D body. Drag to rotate; scroll or pinch to zoom. Use body area buttons below as an alternative."
     onPointerDown={() => { touched.current = true; }} onWheel={() => { touched.current = true; }}
-    style={{ position:'relative',height: 460, width: "100%", background: "#EEF0E9", borderRadius: 16, overflow: "hidden", cursor: hover ? "pointer" : "grab", touchAction: "none" }}>
+    style={{ position:'relative',height:'clamp(280px,100vw,460px)',width: "100%", background: "#EEF0E9", borderRadius: 16, overflow: "hidden", cursor: hover ? "pointer" : "grab", touchAction: "none" }}>
     <style>{'@keyframes movecompass-spin{to{transform:rotate(360deg)}}'}</style>
     {!loaded && <div role="status" style={{position:'absolute',inset:0,zIndex:2,display:'flex',alignItems:'center',justifyContent:'center',gap:12,background:'#EEF0E9'}}><span aria-hidden="true" style={{width:24,height:24,border:'3px solid #AABBB0',borderTopColor:'#2D765A',borderRadius:'50%',animation:'movecompass-spin 1s linear infinite'}}/>Loading 3D body…</div>}
     <Canvas aria-hidden="true" shadows camera={{ position: [0, 1.15, 3.6], fov: 38 }} dpr={[1, 1.75]}

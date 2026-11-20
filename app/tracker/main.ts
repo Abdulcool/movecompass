@@ -46,6 +46,7 @@ function emit(message: unknown) {
   else if (window.parent !== window)
     window.parent.postMessage(message, location.origin);
 }
+new ResizeObserver(()=>emit({type:'resize',height:document.querySelector('main')!.scrollHeight+32})).observe(document.querySelector('main')!);
 function stop() {
   stopped = true;
   generation++;
