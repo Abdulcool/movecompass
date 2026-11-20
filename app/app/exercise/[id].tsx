@@ -69,6 +69,7 @@ export default function Detail() {
             {i + 1}. {step}
           </Copy>
         ))}
+        <Copy>{(session.dailySets[e.id]||0)>=e.sets ? 'Completed today' : `Set ${session.dailySets[e.id]||0} of ${e.sets} done`}</Copy>
       </Card>
       <Card>
         <Text style={s.heading}>Move safely</Text>
@@ -93,6 +94,7 @@ export default function Detail() {
         onPress={() => void complete()}
       />
       {!!status && <Copy>{status}</Copy>}
+      {saved && (session.dailySets[e.id]||0)<e.sets && <Button title="Record another set" onPress={()=>{clientId.current=randomUUID();setSaved(false);setStatus('Rest as advised by your care team before your next set.');}}/>}
     </Page>
   );
 }

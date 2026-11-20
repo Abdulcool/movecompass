@@ -145,6 +145,7 @@ export default function Track() {
       />
       {manualOpen && !saved && <Card><Copy>How many reps did you complete?</Copy><TextInput accessibilityLabel="Reps completed" keyboardType="number-pad" value={manualCount} onChangeText={setManualCount} style={s.input}/><Button title={`Save ${manualCount || '0'} reps manually`} disabled={busy || !/^\d+$/.test(manualCount) || Number(manualCount)<1 || Number(manualCount)>100} onPress={()=>void save(Number(manualCount),'manual')}/></Card>}
       {!!message && <Copy>{message}</Copy>}
+      {saved && (session.dailySets[exercise.id]||0)<exercise.sets && <Button title="Start next set" onPress={()=>{clientId.current=randomUUID();saving.current=false;setReps(0);setAngles({});setSaved(false);setStarted(false);setConsent(false);setHasDraft(false);setManualOpen(false);setMessage('Rest as advised by your care team before starting your next set.');}}/>}
     </Page>
   );
 }

@@ -24,6 +24,7 @@ describe("app API client", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Time-Zone": Intl.DateTimeFormat().resolvedOptions().timeZone,
           Authorization: "Bearer jwt",
         },
         body: '{"reps":6}',

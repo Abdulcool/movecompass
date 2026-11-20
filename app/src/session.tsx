@@ -69,6 +69,7 @@ function useSessionState() {
     [events, setEvents] = useState<Event[]>([]),
     [total, setTotal] = useState(0),
     [weeklyTotal, setWeeklyTotal] = useState(0),
+    [dailySets, setDailySets] = useState<Record<string,number>>({}),
     [queuedCount, setQueuedCount] = useState(0),
     [offline, setOffline] = useState(false),
     [devices, setDevices] = useState<Device[]>([]),
@@ -121,13 +122,14 @@ function useSessionState() {
   const refresh = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await api<{ events: Event[]; total: number; weeklyTotal: number }>(
+      const data = await api<{ events: Event[]; total: number; weeklyTotal: number; dailySets:Record<string,number> }>(
         base,
         "/api/events?limit=200",
         token,
       );
       setEvents(data.events);
       setTotal(data.total); setWeeklyTotal(data.weeklyTotal);
+      setDailySets(data.dailySets);
       if (user?.role === "staff")
         setDevices(
           (await api<{ devices: Device[] }>(base, "/api/devices", token))
@@ -170,7 +172,7 @@ function useSessionState() {
             200,
           ),
         );
-        const message = `${data.event.patientName} completed ${data.event.exerciseName} · ${data.event.reps} reps`;
+        const message = `${data.event.patientName} completed ${data.event.exerciseName} · ${data.event.reps} reps · set ${data.event.setNumber || 1}/${data.event.totalSets || 2}`;
         setToast(message);
         void notify(message).catch(() => {});
       }
@@ -210,6 +212,7 @@ function useSessionState() {
     setToken(result.token);
     setEvents([]);
     setTotal(0); setWeeklyTotal(0);
+    setDailySets({});
     setDevices([]);
     setError("");
   }
@@ -219,6 +222,7 @@ function useSessionState() {
     await AsyncStorage.multiRemove(["mc-token","mc-user"]);
     setToken("");
     setUser(null);
+    setDailySets({});
     setTotal(0); setWeeklyTotal(0);
     setEvents([]);
     setDevices([]);
@@ -268,6 +272,7 @@ function useSessionState() {
     events,
     total,
     weeklyTotal,
+    dailySets,
     offline,
     queuedCount,
     devices,

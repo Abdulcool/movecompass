@@ -6,17 +6,11 @@ import { useSession } from "../../src/session";
 import { Button, Card, Copy, Page, Title, s } from "../../src/ui";
 import { ExerciseCard } from "../../src/ExerciseCard";
 export default function Home() {
-  const { user, events } = useSession();
+  const { user, dailySets } = useSession();
   const daily = exercises.filter((e) =>
     ["wall-angels", "pendulum", "sit-to-stand"].includes(e.id),
   );
-  const today = new Date().toDateString();
-  const completed = new Set(
-    events
-      .filter((e) => new Date(e.completedAt).toDateString() === today)
-      .map((e) => e.exerciseId),
-  );
-  const count = daily.filter((e) => completed.has(e.id)).length;
+  const count = daily.filter((e) => (dailySets[e.id]||0)>=e.sets).length;
   return (
     <Page>
       <Text style={s.eyebrow}>YOUR DAILY COMPANION</Text>
@@ -36,7 +30,7 @@ export default function Home() {
       </Card>
       <Text style={s.heading}>Your next safe step</Text>
       {daily.map((e) => (
-        <ExerciseCard key={e.id} exercise={e} done={completed.has(e.id)} />
+        <ExerciseCard key={e.id} exercise={e} />
       ))}
       <Copy>
         This feature is guidance, not diagnosis. Follow your CCCARE instructor’s

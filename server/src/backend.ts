@@ -20,6 +20,7 @@ export interface CompletionEvent {
   exerciseId: string; exerciseName: string; reps: number; deviceId: string;
   completedAt: string; transport: 'wifi' | 'app' | 'camera'; source: 'manual' | 'camera' | 'device';
   angles: Record<string, number>;
+  setNumber?: number; totalSets?: number;
 }
 interface Options {
   seedDemo?: boolean;
@@ -64,6 +65,7 @@ export function createBackend(options: Options = {}) {
     CREATE TABLE IF NOT EXISTS push_tokens (token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), role TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS revoked_tokens (jti TEXT PRIMARY KEY, expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS submission_keys (owner TEXT NOT NULL, key TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(owner, key));
+    CREATE TABLE IF NOT EXISTS patient_timezones (user_id TEXT PRIMARY KEY REFERENCES users(id), zone TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS pairing_codes (code_hash TEXT PRIMARY KEY, device_id TEXT NOT NULL UNIQUE REFERENCES devices(id), expires INTEGER NOT NULL);
   `);
   const byEmail = (value: string) => db.prepare('SELECT * FROM users WHERE email = ?').get(value.toLowerCase()) as User | undefined;
@@ -115,9 +117,19 @@ export function createBackend(options: Options = {}) {
   const wss = new WebSocketServer({noServer: true, maxPayload: 32768});
   const clients = new Map<WebSocket, {user?: Identity; device?: Device; alive: boolean}>();
   const identity = (res: Response) => res.locals.identity as Identity;
+  const zoneFor = (id:string) => (db.prepare('SELECT zone FROM patient_timezones WHERE user_id = ?').get(id) as {zone:string}|undefined)?.zone || 'UTC';
+  const localDay = (timestamp:string,zone:string) => new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(timestamp));
+  const dailyCounts = (id:string,at=new Date().toISOString()) => {
+    const zone=zoneFor(id),day=localDay(at,zone),time=Date.parse(at),counts:Record<string,number>={};
+    const rows=db.prepare("SELECT payload FROM events WHERE patient_id = ? AND julianday(json_extract(payload, '$.completedAt')) BETWEEN julianday(?) AND julianday(?)").all(id,new Date(time-2*86400000).toISOString(),new Date(time+2*86400000).toISOString()) as {payload:string}[];
+    for(const row of rows){const e=JSON.parse(row.payload) as CompletionEvent;if(localDay(e.completedAt,zone)===day)counts[e.exerciseId]=(counts[e.exerciseId]||0)+1;}
+    return counts;
+  };
   const auth = (req: Request, res: Response, next: NextFunction) => {
     const user = verify((req.headers.authorization ?? '').replace(/^Bearer /, ''));
     if (!user) { res.status(401).json({error: 'Authentication required'}); return; }
+    const zone=req.get('X-Time-Zone');
+    if(zone && zone.length<=80 && zone!==zoneFor(user.id)) {try {new Intl.DateTimeFormat('en',{timeZone:zone});db.prepare('INSERT INTO patient_timezones VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET zone=excluded.zone').run(user.id,zone);}catch {}}
     res.locals.identity = user; next();
   };
   const staff = (_req: Request, res: Response, next: NextFunction) => {
@@ -146,13 +158,14 @@ export function createBackend(options: Options = {}) {
       if(previous)return JSON.parse(previous.payload) as CompletionEvent;
     }
     db.transaction(()=>{
+      if(event.patientId){event.setNumber=(dailyCounts(event.patientId,event.completedAt)[event.exerciseId]||0)+1;event.totalSets=knownExercise(event.exerciseId)?.sets;}
       db.prepare('INSERT INTO events(patient_id, payload) VALUES (?, ?)').run(event.patientId, JSON.stringify(event));
       if(submission)db.prepare('INSERT INTO submission_keys VALUES (?, ?, ?)').run(submission.owner,submission.key,JSON.stringify(event));
     })();
     broadcast({kind: 'event', event}, event.patientId);
     const tokens = db.prepare("SELECT token FROM push_tokens WHERE role = 'staff'").all() as {token: string}[];
     if (tokens.length) {
-      const messages: ExpoPushMessage[] = tokens.map(({token}) => ({to: token, sound: 'default', title: 'MoveCompass care update', body: `${event.patientName} completed ${event.exerciseName}: ${event.reps} reps.`, data: {event}}));
+      const messages: ExpoPushMessage[] = tokens.map(({token}) => ({to: token, sound: 'default', title: 'MoveCompass care update', body: `${event.patientName} completed ${event.exerciseName}: ${event.reps} reps · set ${event.setNumber}/${event.totalSets}.`, data: {event}}));
       const pending = Promise.resolve().then(() => (options.sendPush ?? defaultPush)(messages)).catch(() => { console.warn('Expo push delivery failed'); });
       pendingPush.add(pending); void pending.finally(() => pendingPush.delete(pending));
     }
@@ -248,7 +261,7 @@ export function createBackend(options: Options = {}) {
     const u = identity(res);
     const rows = (u.role === 'staff' ? db.prepare('SELECT payload FROM events ORDER BY id DESC LIMIT ?').all(limit) : db.prepare('SELECT payload FROM events WHERE patient_id = ? ORDER BY id DESC LIMIT ?').all(u.id, limit)) as {payload: string}[];
     const counts = db.prepare(`SELECT count(*) AS total, coalesce(sum(CASE WHEN julianday(json_extract(payload, '$.completedAt')) >= julianday(?) THEN 1 ELSE 0 END), 0) AS weeklyTotal FROM events ${u.role === 'staff' ? '' : 'WHERE patient_id = ?'}`).get(new Date(Date.now()-7*86400000).toISOString(), ...(u.role === 'staff' ? [] : [u.id])) as {total: number; weeklyTotal: number};
-    res.json({events: rows.map(r => JSON.parse(r.payload)), ...counts});
+    res.json({events: rows.map(r => JSON.parse(r.payload)), ...counts, dailySets:dailyCounts(u.id)});
   });
   app.post('/api/devices', auth, staff, (req, res) => {
     const b = req.body;

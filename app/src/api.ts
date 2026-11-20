@@ -14,6 +14,8 @@ export interface Event {
   reps: number;
   completedAt: string;
   source: string;
+  setNumber?: number;
+  totalSets?: number;
 }
 export interface Device {
   deviceId: string;
@@ -46,6 +48,7 @@ export async function api<T>(
     signal: controller.signal,
     headers: {
       "Content-Type": "application/json",
+      "X-Time-Zone": Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),

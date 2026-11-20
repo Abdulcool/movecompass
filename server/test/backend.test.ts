@@ -78,6 +78,14 @@ describe('auth and isolation',()=>{
   });
 });
 describe('completion contract and storage',()=>{
+  it('logs one set per manual or camera save and reports daily set progress',async()=>{
+    const token=await login();
+    const first=await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send(completion);
+    expect(first.body.event.setNumber).toBe(1);expect(first.body.event.totalSets).toBe(2);
+    expect((await request(backend.app).get('/api/events').auth(token,{type:'bearer'})).body.dailySets['sit-to-stand']).toBe(1);
+    const second=await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send({...completion,source:'manual'});
+    expect(second.body.event.setNumber).toBe(2);
+  });
   it('deduplicates app retries with a durable patient-scoped client UUID',async()=>{
     const token=await login();const data={...completion,clientId:'c7315c2c-9588-4ce7-a216-bb884732122a'};
     const first=await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send(data);
