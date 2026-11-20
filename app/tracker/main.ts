@@ -39,7 +39,6 @@ let pose: PoseLandmarker | undefined,
 let generation = 0,
   lastTime = -1,
   lastReps = progress.value().reps;
-  progress.begin();
 function emit(message: unknown) {
   const serialized = JSON.stringify(message);
   if (window.ReactNativeWebView)
@@ -87,7 +86,7 @@ async function start() {
   stopped = false;
   completed = false;
   lastTime = -1;
-  lastReps = 0;
+  progress.begin();lastReps = progress.value().reps;
   el("error").hidden = true;
   el("retry").hidden = true;
   try {
@@ -149,13 +148,21 @@ async function start() {
     const tracker = createTracker(exercise.id),
       summary = angleSummary(),
       keys = relevantJoints(exercise.id);
+    const input=document.createElement('canvas'),inputContext=input.getContext('2d',{alpha:false})!;
+    let nextInferenceAt=0,averageCost=0;
     function frame() {
       if (stopped || run !== generation || !pose) return;
       try {
-        if (video.readyState >= 2 && video.currentTime !== lastTime) {
+        if (video.readyState >= 2 && video.currentTime !== lastTime && performance.now()>=nextInferenceAt) {
           lastTime = video.currentTime;
           const timestampMs = performance.now();
-          const result = pose.detectForVideo(video, timestampMs);
+          const inputWidth=Math.min(320,video.videoWidth),inputHeight=Math.round(video.videoHeight*inputWidth/video.videoWidth);
+          if(input.width!==inputWidth||input.height!==inputHeight){input.width=inputWidth;input.height=inputHeight;}
+          inputContext.drawImage(video,0,0,inputWidth,inputHeight);
+          const result = pose.detectForVideo(input, timestampMs);
+          const inferenceMs=performance.now()-timestampMs;
+          averageCost=averageCost?averageCost*.8+inferenceMs*.2:inferenceMs;
+          nextInferenceAt=performance.now()+Math.max(16,Math.min(60,averageCost*.2));
           const output = tracker.update({
             landmarks: result.landmarks,
             worldLandmarks: result.worldLandmarks,
@@ -166,31 +173,32 @@ async function start() {
           const points = result.landmarks[0] || [];
           summary.update(output.angles);
           const current = progress.update(output.reps,summary.value());
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
+          const scale=Math.min(1,640/Math.max(video.videoWidth,video.videoHeight));
+          const overlayWidth=Math.round(video.videoWidth*scale),overlayHeight=Math.round(video.videoHeight*scale);
+          if(canvas.width!==overlayWidth||canvas.height!==overlayHeight){canvas.width=overlayWidth;canvas.height=overlayHeight;}
           const x = (n: number) => (1 - n) * canvas.width,
             y = (n: number) => n * canvas.height;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.lineWidth = 3;
           ctx.strokeStyle = "#9FD8BE";
           ctx.fillStyle = "#E78367";
+          ctx.beginPath();
           for (const { start, end } of PoseLandmarker.POSE_CONNECTIONS) {
             const a = points[start],
               b = points[end];
             if (visible(a) && visible(b)) {
-              ctx.beginPath();
               ctx.moveTo(x(a.x), y(a.y));
               ctx.lineTo(x(b.x), y(b.y));
-              ctx.stroke();
             }
           }
+          ctx.stroke();ctx.beginPath();
           for (const p of points) {
             if (visible(p)) {
-              ctx.beginPath();
+              ctx.moveTo(x(p.x)+4,y(p.y));
               ctx.arc(x(p.x), y(p.y), 4, 0, 2 * Math.PI);
-              ctx.fill();
             }
           }
+          ctx.fill();
           ctx.font = `bold ${Math.max(14, canvas.width / 60)}px system-ui`;
           const labels: {left:number;top:number;width:number}[] = [];
           for (const key of keys) {
@@ -227,11 +235,11 @@ async function start() {
           el("visibility").textContent = low
             ? "Low visibility — step back so your whole body is in view"
             : "";
-          const progress = rangeProgress(output.metric, exercise.tracking);
-          el("progress").style.width = `${progress}%`;
+          const range = rangeProgress(output.metric, exercise.tracking);
+          el("progress").style.width = `${range}%`;
           document
             .querySelector(".bar")!
-            .setAttribute("aria-valuenow", String(Math.round(progress)));
+            .setAttribute("aria-valuenow", String(Math.round(range)));
           el("range").textContent =
             `${exercise.tracking.targetRangeLabel} · metric ${output.metric === null ? "—" : output.metric.toFixed(2)}`;
           el("rom").textContent = output.lastRep
@@ -239,7 +247,7 @@ async function start() {
             : "Complete a controlled movement to see your range of motion.";
           window.dispatchEvent(
             new CustomEvent("movecompass:frame", {
-              detail: { timestampMs, ...output, reps:current.reps },
+              detail: { timestampMs,inferenceMs,inputWidth,inputHeight, ...output, reps:current.reps },
             }),
           );
           if (current.reps !== lastReps || timestampMs-lastEmit>=500) {

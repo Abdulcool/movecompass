@@ -41,7 +41,7 @@ try {
   });
   page.on("pageerror", (error) => console.error("PAGE ERROR", error.message));
   await page.goto(
-    `${base}/tracker.html?exercise=${exercise}&target=${process.env.TARGET || 999}`,
+    `${base}/tracker.html?exercise=${exercise}&target=${process.env.TARGET || 100}`,
   );
   await page.waitForFunction(
     () =>
