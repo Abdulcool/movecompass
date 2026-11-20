@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Platform, Text } from "react-native";
+import { Linking, Platform, Text } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSession } from "../src/session";
 import { Button, Card, Copy, Field, Page, Title, s } from "../src/ui";
@@ -46,10 +46,11 @@ export default function Settings() {
         />
         <Copy>
           Pairing info is a local reference only. A staff member registers the
-          board and supplies its firmware config. ESP8266 uses WiFi, not
+          board and supplies a six-digit pairing code. ESP8266 uses WiFi, not
           Bluetooth.
         </Copy>
         <Copy>Do not enter WiFi passwords or device secret keys here.</Copy>
+        {session.user?.role==='staff' && <><Button title="Open USB device flasher" onPress={()=>void Linking.openURL(`${session.base}/flash.html`)}/><Button title="Register or pair a device" secondary onPress={()=>void Linking.openURL(`${session.base}/admin`)}/><Copy>Use Chrome or Edge on a desktop computer and a USB data cable. The flasher walks you through home WiFi and the MoveCompass-Setup portal.</Copy></>}
         <Button title="Save settings" onPress={() => void save()} />
         {!!message && <Copy>{message}</Copy>}
       </Card>

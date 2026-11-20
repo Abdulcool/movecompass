@@ -2,6 +2,21 @@
 
 Your next safe step. Cross-platform (iOS, Android, web) exercise companion with camera-based joint-angle tracking.
 
+## Quick start: no-code board setup
+
+1. Open MoveCompass in Chrome or Edge on a desktop and sign in with your care team's staff account.
+2. In Device settings, register a NodeMCU ESP8266 for the patient's email. Keep the six-digit pairing code (valid once, for 15 minutes).
+3. Open **USB device flasher** (`/flash.html`), connect the board with a USB data cable, choose its port and install.
+4. Join **MoveCompass-Setup** WiFi on your phone, then open `http://192.168.4.1` if the portal does not open itself.
+5. Select home 2.4 GHz WiFi; enter its password, the MoveCompass server address shown by the flasher and the pairing code. Save. The LED turns off when connected.
+6. Complete a set as the patient. Their board flashes five times and holds for three seconds.
+
+No source edits, WiFi passwords in code or patient-ID copying are needed.
+See [board setup and advanced development](firmware/esp8266/README.md) for drivers,
+wiring, recovery and local compilation. Hardware operation still needs verification on a physical board.
+
+## Advanced development
+
 Use Node 22 (`nvm use`), then `npm install` (Expo SDK 58 requires Node 22.13+).
 Run `npm test -w packages/pose` and `npm run typecheck`.
 
