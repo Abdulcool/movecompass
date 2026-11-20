@@ -72,6 +72,8 @@ function Human({ value, onChange, onHover, onReady }: BodyPickerProps & { onHove
     onPointerOut={() => { setHover(""); onHover(""); }} />;
 }
 function Controls({ touched }: { touched: React.RefObject<boolean> }) {
+  const [reduced,setReduced]=useState(()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  useEffect(()=>{const media=window.matchMedia('(prefers-reduced-motion: reduce)'),change=()=>setReduced(media.matches);media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
   const { camera, gl, invalidate,size } = useThree();
   useEffect(()=>{if(camera instanceof PerspectiveCamera){camera.fov=Math.max(38,Math.min(110,2*Math.atan(1.05/(3.6*(size.width/size.height)))*180/Math.PI));camera.updateProjectionMatrix();}},[camera,size.width,size.height]);
   useEffect(() => {
@@ -93,7 +95,7 @@ function Controls({ touched }: { touched: React.RefObject<boolean> }) {
     controls.addEventListener("start", stop);
     return () => { controls.removeEventListener("start", stop); controls.dispose(); };
   }, [controls, touched, invalidate]);
-  useFrame((_, delta) => { controls.autoRotate = !touched.current; controls.autoRotateSpeed = .35; controls.update(delta); });
+  useFrame((_, delta) => { controls.autoRotate = !touched.current&&!reduced; controls.autoRotateSpeed = .35; controls.enableDamping=!reduced;controls.update(delta); });
   return null;
 }
 class SceneBoundary extends Component<React.PropsWithChildren, { failed: boolean }> {

@@ -17,6 +17,7 @@ export default function Layout() {
     <Tabs
       screenOptions={({route})=>({
         tabBarActiveTintColor: colors.green,
+        tabBarInactiveTintColor:colors.muted,
         headerStyle: { backgroundColor: colors.paper },
         tabBarStyle: { backgroundColor: "white",height:84,paddingBottom:16,paddingTop:8 },
         tabBarLabelStyle:{fontSize:14,fontWeight:'600'},
