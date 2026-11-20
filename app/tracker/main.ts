@@ -14,6 +14,10 @@ const video = document.querySelector<HTMLVideoElement>("#video")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#overlay")!;
 const ctx = canvas.getContext("2d")!;
 const el = (id: string) => document.getElementById(id)!;
+if(window.parent===window&&!window.ReactNativeWebView){
+  el('tracker').setAttribute('role','main');
+  const title=document.createElement('h1');title.id='name';title.textContent=el('name').textContent;el('name').replaceWith(title);
+}
 declare const __TRACKER_ASSETS__:{base:string;sizes:Record<string,number>};
 async function loadAssets(){
   const received:Record<string,number>={},total=Object.values(__TRACKER_ASSETS__.sizes).reduce((a,b)=>a+b,0);
@@ -48,7 +52,7 @@ function emit(message: unknown) {
   else if (window.parent !== window)
     window.parent.postMessage(message, location.origin);
 }
-new ResizeObserver(()=>emit({type:'resize',height:document.querySelector('main')!.scrollHeight+32})).observe(document.querySelector('main')!);
+new ResizeObserver(()=>emit({type:'resize',height:el('tracker').scrollHeight+32})).observe(el('tracker'));
 function stop() {
   stopped = true;
   generation++;

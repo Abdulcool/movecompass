@@ -120,7 +120,7 @@ export default function Track() {
         </Card>
       ) : (
         <>
-          <Title>
+          <Title level={2}>
             {reps} / {exercise.reps} reps
           </Title>
           {!saved && !allDone && (

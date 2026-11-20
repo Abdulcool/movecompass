@@ -1,4 +1,6 @@
 import React from "react";
+import {Text,View} from 'react-native';
+import '../src/global.css';
 import { Stack } from "expo-router";
 import { SessionProvider } from "../src/session";
 import { colors } from "../src/ui";
@@ -9,7 +11,7 @@ export default function Layout() {
         screenOptions={{
           headerStyle: { backgroundColor: colors.paper },
           headerTintColor: colors.ink,
-          headerTitle: "MoveCompass",
+          headerTitle: ({children})=><View role="banner"><Text accessibilityRole="header" aria-level={2} style={{fontSize:18,fontWeight:'600',color:colors.ink}}>{children}</Text></View>,
           contentStyle: { backgroundColor: colors.paper },
         }}
       >

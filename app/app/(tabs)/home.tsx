@@ -19,7 +19,7 @@ export default function Home() {
       <Copy>Let’s make today feel a little easier.</Copy>
       <Card>
         <Text style={s.heading}>Today’s dosage</Text>
-        <Title>{Math.round((count / 3) * 100)}%</Title>
+        <Title level={2}>{Math.round((count / 3) * 100)}%</Title>
         <Copy>
           {count} of 3 planned activities completed today. Move at your own
           pace.

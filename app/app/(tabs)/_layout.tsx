@@ -1,6 +1,6 @@
 import React from "react";
 import { Ionicons } from '@expo/vector-icons';
-import { View } from 'react-native';
+import { Text,View } from 'react-native';
 import { BottomTabBar } from 'expo-router/tabs';
 import { Redirect, Tabs } from "expo-router";
 import { useSession } from "../../src/session";
@@ -24,7 +24,7 @@ export default function Layout() {
         headerStyle: { backgroundColor: colors.paper },
         tabBarStyle: { backgroundColor: "white",height:84,paddingBottom:16,paddingTop:8 },
         tabBarLabelStyle:{fontSize:14,fontWeight:'600'},
-        headerTitle: "MoveCompass",
+        headerTitle: ()=><View role="banner"><Text accessibilityRole="header" aria-level={2} style={{fontSize:18,fontWeight:'600',color:colors.ink}}>MoveCompass</Text></View>,
         tabBarIcon: ({ color }) => <Ionicons color={typeof color==='string'?color:colors.muted} size={25} name={route.name==='home'?'home-outline':route.name==='plan'?'list-outline':'person-circle-outline'}/>,
       })}
     >

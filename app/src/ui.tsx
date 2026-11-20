@@ -29,9 +29,9 @@ export function Page({ children,scrollRef }: React.PropsWithChildren<{scrollRef?
     </ScrollView>
   );
 }
-export function Title({ children }: React.PropsWithChildren) {
+export function Title({ children,level=1 }: React.PropsWithChildren<{level?:1|2|3}>) {
   return (
-    <Text accessibilityRole="header" style={s.title}>
+    <Text accessibilityRole="header" aria-level={level} style={s.title}>
       {children}
     </Text>
   );
@@ -99,7 +99,7 @@ export const s = StyleSheet.create({
     paddingBottom: 60,
   },
   title: {
-    fontSize: textSize(32),
+    fontSize: Platform.OS==='web'?'clamp(1.35rem, 4vw, 2rem)' as unknown as number:textSize(32),
     fontWeight: "700",
     color: colors.ink,
     letterSpacing: -0.8,
