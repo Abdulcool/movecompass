@@ -11,7 +11,8 @@ import { randomUUID } from 'expo-crypto';
 import { enqueueSet, flushSets, outboxKey } from './outbox';
 import { AppState,Pressable,Text,View } from "react-native";
 import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
-import { notify, unregisterNotifications } from "./notifications";
+import { notify } from "./notifications";
+import { clearSession } from './logout';
 import { colors } from "./ui";
 import { mergeEvents } from './event-history';
 import { wakeRetry } from './wake';
@@ -252,9 +253,8 @@ function useSessionState() {
     setError("");
   }
   async function logout() {
-    try { await unregisterNotifications(base, token); await api(base, "/api/auth/logout", token, {}); }
+    try { await clearSession(base,token); }
     catch { setError("Can't sign out safely while offline. Please reconnect and try again."); return false; }
-    await AsyncStorage.multiRemove(["mc-token","mc-user"]);
     setToken("");
     setUser(null);
     setDailySets({});
@@ -263,6 +263,7 @@ function useSessionState() {
     setDevices([]);
     setToasts([]);
     setQueuedCount(0);
+    setError('');setOffline(false);
     return true;
   }
   async function saveBackend(url: string) {
