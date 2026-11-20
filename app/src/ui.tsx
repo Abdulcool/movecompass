@@ -20,7 +20,7 @@ export const colors = {
   line: "#E4E9E4",
 };
 export const textSize=(size:number)=>(Platform.OS==='web'?`${size/16}rem`:size) as number;
-export function Page({ children,scrollRef }: React.PropsWithChildren<{scrollRef?:React.RefObject<ScrollView|null>}>) {
+export function Page({ children,scrollRef }: React.PropsWithChildren<{scrollRef?:React.RefObject<React.ComponentRef<typeof ScrollView>|null>}>) {
   const focused = useIsFocused();
   if (!focused) return null;
   return (

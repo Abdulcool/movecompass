@@ -7,7 +7,7 @@ import { Button, Card, Copy, Page, Title, s } from "../../src/ui";
 export default function Plan() {
   const [region, setRegion] = useState(""),
     [goal, setGoal] = useState("");
-  const scroll=useRef<ScrollView>(null),[resultsY,setResultsY]=useState(0);
+  const scroll=useRef<React.ComponentRef<typeof ScrollView>>(null),[resultsY,setResultsY]=useState(0);
   useEffect(()=>{if(region && resultsY)scroll.current?.scrollTo({y:resultsY,animated:true});},[region,resultsY]);
   const filtered = exercises.filter(
     (e) => (!region || e.group === region) && (!goal || e.goal === goal),
