@@ -14,6 +14,8 @@ export default function Admin() {
     [result, setResult] = useState<{
       deviceId: string;
       deviceKey: string;
+      pairingCode: string;
+      pairingExpiresAt: string;
     } | null>(null),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -172,6 +174,9 @@ export default function Admin() {
         {!!message && <Copy>{message}</Copy>}
         {result && (
           <>
+            <Text style={s.heading}>Pairing code: {result.pairingCode}</Text>
+            <Copy>Use this code once in the MoveCompass-Setup WiFi portal before {new Date(result.pairingExpiresAt).toLocaleTimeString()}. Pairing replaces the advanced device key below.</Copy>
+            <Button title="Open USB device flasher" onPress={()=>{if(Platform.OS==='web')window.open('/flash.html','_blank','noopener');else router.push('/settings');}}/>
             <Copy>
               Save this secret now. It is shown only once and is not stored by
               this app.

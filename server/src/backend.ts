@@ -3,7 +3,7 @@ import cors from 'cors';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomInt, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { createServer } from 'node:http';
@@ -64,6 +64,7 @@ export function createBackend(options: Options = {}) {
     CREATE TABLE IF NOT EXISTS push_tokens (token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), role TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS revoked_tokens (jti TEXT PRIMARY KEY, expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS submission_keys (owner TEXT NOT NULL, key TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(owner, key));
+    CREATE TABLE IF NOT EXISTS pairing_codes (code_hash TEXT PRIMARY KEY, device_id TEXT NOT NULL UNIQUE REFERENCES devices(id), expires INTEGER NOT NULL);
   `);
   const byEmail = (value: string) => db.prepare('SELECT * FROM users WHERE email = ?').get(value.toLowerCase()) as User | undefined;
   const byId = (value: string) => db.prepare('SELECT * FROM users WHERE id = ?').get(value) as User | undefined;
@@ -79,6 +80,15 @@ export function createBackend(options: Options = {}) {
     }
   }
   const deviceById = (id: string) => db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as Device | undefined;
+  const codeHash = (code:string) => createHmac('sha256',secret).update(code).digest('hex');
+  const pairingCode = (deviceId:string) => {
+    db.prepare('DELETE FROM pairing_codes WHERE expires <= ? OR device_id = ?').run(Date.now(),deviceId);
+    let code: string;
+    do {code=String(randomInt(1000000)).padStart(6,'0');}while(db.prepare('SELECT 1 FROM pairing_codes WHERE code_hash = ?').get(codeHash(code)));
+    const expires=Date.now()+15*60000;
+    db.prepare('INSERT INTO pairing_codes VALUES (?, ?, ?)').run(codeHash(code),deviceId,expires);
+    return {pairingCode:code,pairingExpiresAt:new Date(expires).toISOString()};
+  };
   const tokenFor = (u: User, role: Role) => jwt.sign({role}, secret, {subject: u.id, jwtid: randomUUID(), expiresIn: '7d', issuer: 'movecompass', audience: 'movecompass-app'});
   const verify = (token: string): Identity | null => {
     try {
@@ -171,6 +181,21 @@ export function createBackend(options: Options = {}) {
     const role = b.role as Role; res.json({token: tokenFor(user, role), user: publicUser(user, role)});
   });
   app.get('/api/me', auth, (_req, res) => { const u = identity(res); res.json({user: publicUser(byId(u.id)!, u.role)}); });
+  app.post('/api/devices/pair', (req,res)=>{
+    if(!object(req.body) || typeof req.body.code!=='string' || !/^\d{6}$/.test(req.body.code)){res.status(400).json({error:'Enter the six-digit pairing code from your care team.'});return;}
+    const paired=db.transaction(()=>{
+      const row=db.prepare('SELECT device_id FROM pairing_codes WHERE code_hash = ? AND expires > ?').get(codeHash(req.body.code),Date.now()) as {device_id:string}|undefined;
+      if(!row)return null;
+      const device=deviceById(row.device_id);if(!device)return null;
+      const key=randomBytes(32).toString('hex');
+      db.prepare('UPDATE devices SET key_hash = ? WHERE id = ?').run(hash(key),device.id);
+      db.prepare('DELETE FROM pairing_codes WHERE device_id = ?').run(device.id);
+      for(const [socket,client] of clients)if(client.device?.id===device.id)socket.close(1008,'Device paired again');
+      return {deviceId:device.id,key,patientId:device.patient_id};
+    })();
+    if(!paired){res.status(400).json({error:'Pairing code is invalid, expired or already used. Ask your care team for a new code.'});return;}
+    res.json(paired);
+  });
   app.post('/api/auth/logout', auth, (_req, res) => {
     const u = identity(res);
     db.prepare('DELETE FROM revoked_tokens WHERE expires < ?').run(Math.floor(Date.now()/1000));
@@ -232,7 +257,11 @@ export function createBackend(options: Options = {}) {
     if (!patient || patient.role !== 'patient') { res.status(400).json({errors: ['Patient account not found']}); return; }
     const deviceId = `esp8266-${randomUUID()}`, deviceKey = randomBytes(32).toString('hex');
     db.prepare('INSERT INTO devices VALUES (?, ?, ?, ?, NULL)').run(deviceId, b.name, patient.id, hash(deviceKey));
-    res.status(201).json({deviceId, deviceKey});
+    res.status(201).json({deviceId, deviceKey, ...pairingCode(deviceId)});
+  });
+  app.post('/api/devices/:id/pair-code', auth, staff, (req,res)=>{
+    if(!deviceById(String(req.params.id))){res.status(404).json({error:'Device not found'});return;}
+    res.json(pairingCode(String(req.params.id)));
   });
   app.get('/api/devices', auth, staff, (_req, res) => {
     const rows = db.prepare('SELECT d.*, u.email AS patientEmail FROM devices d JOIN users u ON u.id = d.patient_id ORDER BY d.rowid DESC').all() as (Device & {patientEmail: string})[];
