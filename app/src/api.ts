@@ -33,10 +33,11 @@ export async function api<T>(
   path: string,
   token?: string,
   body?: unknown,
+  method = body === undefined ? "GET" : "POST",
 ): Promise<T> {
   if (!base) throw new Error("Set your backend URL in settings first.");
   const response = await fetch(base + path, {
-    method: body === undefined ? "GET" : "POST",
+    method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

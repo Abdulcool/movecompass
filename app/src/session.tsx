@@ -9,7 +9,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pressable, Text, View } from "react-native";
 import { api, baseUrl, type User, type Event, type Device } from "./api";
-import { notify } from "./notifications";
+import { notify, unregisterNotifications } from "./notifications";
 import { colors } from "./ui";
 function useLive(
   url: string,
@@ -174,18 +174,21 @@ function useSessionState() {
     setError("");
   }
   async function logout() {
+    try { await unregisterNotifications(base, token); }
+    catch { setError("Can't sign out safely while offline. Please reconnect and try again."); return false; }
     await AsyncStorage.removeItem("mc-token");
     setToken("");
     setUser(null);
     setEvents([]);
     setDevices([]);
     setToast("");
+    return true;
   }
   async function saveBackend(url: string) {
     if (url && !/^https?:\/\/[^\s]+$/.test(url))
       throw new Error("Enter a full http:// or https:// URL.");
     await AsyncStorage.setItem("mc-backend", url.replace(/\/$/, ""));
-    if (url !== setting) await logout();
+    if (url !== setting && !(await logout())) throw new Error("Reconnect before changing the backend.");
     setSetting(url.replace(/\/$/, ""));
   }
   async function complete(

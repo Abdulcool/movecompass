@@ -91,7 +91,7 @@ export function createBackend(options: Options = {}) {
   const throttle = (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now();
     for (const [key, value] of attempts) if (value.expires <= now) attempts.delete(key);
-    const key = `${req.path}:${req.ip}`;
+    const key = `${req.originalUrl.split('?')[0]}:${req.ip}`;
     const bucket = attempts.get(key) ?? {count: 0, expires: now + 60000};
     attempts.set(key, bucket);
     if (++bucket.count > 10) { res.set('Retry-After', String(Math.ceil((bucket.expires - now) / 1000))).status(429).json({error: 'Too many attempts. Please wait a minute and try again.'}); return; }
@@ -222,6 +222,11 @@ export function createBackend(options: Options = {}) {
     const u = identity(res);
     db.prepare('INSERT INTO push_tokens VALUES (?, ?, ?) ON CONFLICT(token) DO UPDATE SET user_id=excluded.user_id, role=excluded.role').run(req.body.token, u.id, u.role);
     res.status(201).json({ok: true});
+  });
+  app.delete('/api/push/register', auth, (req, res) => {
+    if (!object(req.body) || typeof req.body.token !== 'string' || !Expo.isExpoPushToken(req.body.token)) { res.status(400).json({error: 'A valid push token is required'}); return; }
+    db.prepare('DELETE FROM push_tokens WHERE token = ? AND user_id = ?').run(req.body.token, identity(res).id);
+    res.json({ok: true});
   });
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
