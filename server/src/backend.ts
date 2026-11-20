@@ -27,6 +27,7 @@ export interface CompletionEvent {
 interface Options {
   seedDemo?: boolean;
   devicePairingSecret?:string;
+  trustProxy?:number;
   dataDir?: string; webDist?: string; jwtSecret?: string; allowUnregisteredDevices?: boolean;
   sendPush?: (messages: ExpoPushMessage[]) => Promise<void>;
 }
@@ -127,6 +128,9 @@ export function createBackend(options: Options = {}) {
     } catch { return null; }
   };
   const app = express(); app.disable('x-powered-by'); app.use(cors()); app.use(express.json({limit: '32kb'}));
+  const proxyHops=options.trustProxy??Number(process.env.TRUST_PROXY??1);
+  if(!Number.isSafeInteger(proxyHops)||proxyHops<0)throw new Error('TRUST_PROXY must be a nonnegative number of trusted proxy hops');
+  app.set('trust proxy',proxyHops);
   const attempts = new Map<string, {count: number; expires: number}>();
   const throttle = (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now();

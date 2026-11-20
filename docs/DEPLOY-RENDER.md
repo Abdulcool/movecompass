@@ -37,6 +37,11 @@ On each fresh start the two demo accounts are re-seeded from the generated
 password variables. Non-demo accounts lost in a reset must be created again.
 `DATA_DIR=/tmp/movecompass-data` is intentionally disposable.
 
+The backend trusts one reverse-proxy hop by default so rate limits use Render's
+forwarded client IP. Set `TRUST_PROXY=0` when serving directly; use an explicit
+nonnegative hop count for a different proxy topology. Only expose the backend
+through that trusted proxy when proxy trust is enabled.
+
 A paired board stores a signed credential binding its device ID to the patient's
 email. Keeping `DEVICE_PAIRING_SECRET` unchanged lets the backend recreate that
 registration after a wipe. On reconnect the board refreshes its patient ID. If a

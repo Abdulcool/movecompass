@@ -21,3 +21,13 @@ it('shares throttle buckets across route casing and trailing slashes',async()=>{
     await request(b.app).post('/Api/Auth/Login?retry=1').send({}).expect(429);
   }finally{await b.close();rmSync(dir,{recursive:true});}
 });
+it('separates forwarded client IPs behind one proxy and allows disabling proxy trust',async()=>{
+  for(const trustProxy of [1,0]){
+    const dir=mkdtempSync(join(tmpdir(),'mc-rate-proxy-')),b=createBackend({dataDir:dir,trustProxy});
+    try{
+      for(let i=0;i<10;i++)await request(b.app).post('/api/auth/login').set('X-Forwarded-For','198.51.100.1').send({}).expect(400);
+      await request(b.app).post('/api/auth/login').set('X-Forwarded-For','198.51.100.1').send({}).expect(429);
+      await request(b.app).post('/api/auth/login').set('X-Forwarded-For','198.51.100.2').send({}).expect(trustProxy?400:429);
+    }finally{await b.close();rmSync(dir,{recursive:true});}
+  }
+});
