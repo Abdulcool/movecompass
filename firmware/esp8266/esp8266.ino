@@ -248,12 +248,11 @@ void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
 }
 
 void startBackend() {
-  socketBackoff = 1000;
   String path = "/ws?ack=1&resume=1&deviceId=" + queryValue(deviceId.c_str()) + "&key=" + queryValue(deviceKey.c_str());
   if (backendTls) {
     socketClient.beginSSL(backendHost.c_str(), backendPort, path.c_str());
   } else socketClient.begin(backendHost.c_str(), backendPort, path.c_str());
-  socketClient.setReconnectInterval(1000);
+  socketClient.setReconnectInterval(socketBackoff);
   socketClient.enableHeartbeat(25000, 5000, 2);
 }
 
