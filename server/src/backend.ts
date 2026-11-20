@@ -402,7 +402,7 @@ export function createBackend(options: Options = {}) {
   }, 25000); heartbeat.unref();
   const webDist = resolve(options.webDist ?? process.env.WEB_DIST ?? '../app/dist');
   app.use('/api', (_req, res) => { res.status(404).json({error: 'API endpoint not found'}); });
-  app.get(/^\/tracker\/assets\/[a-f0-9]{16}\/[A-Za-z0-9_.-]+$/,(req,res,next)=>{
+  app.get([/^\/tracker\/assets\/[a-f0-9]{16}\/[A-Za-z0-9_.-]+$/,/^\/_expo\/static\/js\/web\/[A-Za-z0-9_-]+\.js$/],(req,res,next)=>{
     const path=resolve(webDist,`.${req.path}`),encoding=req.acceptsEncodings('br','gzip','identity'),suffix=encoding==='br'?'.br':encoding==='gzip'?'.gz':'';
     res.vary('Accept-Encoding');
     if(suffix&&existsSync(path+suffix)){res.set({'Content-Encoding':encoding as string,'Cache-Control':'public, max-age=31536000, immutable'}).type(path).sendFile(path+suffix);return;}

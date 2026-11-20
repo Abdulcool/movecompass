@@ -5,7 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "build:web": "expo export -p web && node scripts/build-tracker.mjs && node scripts/build-body.mjs && node scripts/build-flasher.mjs",
+    "build:web": "expo export -p web && node scripts/build-tracker.mjs && node scripts/build-body.mjs && node scripts/build-flasher.mjs && node scripts/compress-web.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run test",
     "test:e2e": "node test/shell.mjs",
