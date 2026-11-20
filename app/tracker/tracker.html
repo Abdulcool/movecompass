@@ -40,8 +40,10 @@
         transform: scaleX(-1);
       }
       canvas {
-        pointer-events: none;
+        cursor: pointer;
       }
+      #selection {position:absolute;top:8px;left:8px;right:8px;padding:12px;background:#13231fee;border-radius:12px;z-index:2;}
+      #people {display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
       .status {
         display: flex;
         flex-wrap:wrap;
@@ -131,6 +133,7 @@
       <p id="download">Preparing local tracker · 0%</p>
       <progress id="download-progress" max="100" value="0" aria-label="Local tracker download progress"></progress>
       <div class="stage">
+        <div id="selection" role="status" hidden>Tap yourself on the camera image, or choose a person.<div id="people"></div></div>
         <video id="video" autoplay muted playsinline></video
         ><canvas
           id="overlay"

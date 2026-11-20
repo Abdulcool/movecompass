@@ -3,6 +3,7 @@ import { createTracker, getExercise, joints, visible } from "@movecompass/pose";
 import { angleSummary, relevantJoints, rangeProgress } from "./metrics";
 import { setProgress } from './progress';
 import { cameraGuidance } from '../src/camera-errors';
+import {createPersonSelector} from './person';
 declare global {
   interface Window {
     ReactNativeWebView?: { postMessage: (message: string) => void };
@@ -126,7 +127,7 @@ async function start() {
         delegate: "GPU" as "GPU" | "CPU",
       },
       runningMode: "VIDEO" as const,
-      numPoses: 1,
+      numPoses: 3,
       minPoseDetectionConfidence: 0.5,
       minPosePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,
@@ -149,6 +150,15 @@ async function start() {
     const tracker = createTracker(exercise.id),
       summary = angleSummary(),
       keys = relevantJoints(exercise.id);
+    const hint=params.get('person')?.split(',').map(Number);
+    const selector=createPersonSelector(hint?.length===2&&hint.every(Number.isFinite)?{x:hint[0],y:hint[1]}:params.get('person')==='auto'?'largest':undefined);
+    let currentPeople:Parameters<typeof selector.update>[0]=[];
+    canvas.onclick=event=>{
+      const rect=canvas.getBoundingClientRect(),scale=Math.min(rect.width/canvas.width,rect.height/canvas.height);
+      const width=canvas.width*scale,height=canvas.height*scale;
+      const x=1-(event.clientX-rect.left-(rect.width-width)/2)/width,y=(event.clientY-rect.top-(rect.height-height)/2)/height;
+      if(x>=0&&x<=1&&y>=0&&y<=1&&selector.choose(currentPeople,{x,y})){tracker.reset();progress.begin();}
+    };
     const input=document.createElement('canvas'),inputContext=input.getContext('2d',{alpha:false})!;
     let nextInferenceAt=0,averageCost=0;
     function frame() {
@@ -161,17 +171,25 @@ async function start() {
           if(input.width!==inputWidth||input.height!==inputHeight){input.width=inputWidth;input.height=inputHeight;}
           inputContext.drawImage(video,0,0,inputWidth,inputHeight);
           const result = pose.detectForVideo(input, timestampMs);
+          currentPeople=result.landmarks;
+          const selected=selector.update(result.landmarks),index=selected.index;
+          el('selection').hidden=!selected.needsSelection;
+          const choices=el('people');choices.replaceChildren();
+          if(selected.needsSelection)for(const person of selected.people){
+            const button=document.createElement('button');button.textContent=`Person ${person.index+1}`;
+            button.onclick=()=>{selector.choose(currentPeople,person);tracker.reset();progress.begin();};choices.append(button);
+          }
           const inferenceMs=performance.now()-timestampMs;
           averageCost=averageCost?averageCost*.8+inferenceMs*.2:inferenceMs;
           nextInferenceAt=performance.now()+Math.max(16,Math.min(60,averageCost*.2));
           const output = tracker.update({
-            landmarks: result.landmarks,
-            worldLandmarks: result.worldLandmarks,
+            landmarks: index===null?[]:result.landmarks[index],
+            worldLandmarks: index===null?[]:result.worldLandmarks[index],
             timestampMs,
             width: video.videoWidth,
             height: video.videoHeight,
           });
-          const points = result.landmarks[0] || [];
+          const points = index===null?[]:result.landmarks[index] || [];
           summary.update(output.angles);
           const current = progress.update(output.reps,summary.value());
           const scale=Math.min(1,640/Math.max(video.videoWidth,video.videoHeight));
