@@ -10,7 +10,7 @@ export function completionForPatient(raw, patientId, seen = new Set()) {
   if (message?.kind !== 'event' || event?.type !== 'exercise_completed' ||
       typeof event.id !== 'string' || !event.id || event.patientId !== patientId ||
       typeof event.exerciseName !== 'string' || !event.exerciseName ||
-      !Number.isInteger(event.reps) || event.reps < 0 || event.reps > 10000 || seen.has(event.id)) return null;
+      !Number.isInteger(event.reps) || event.reps < 1 || event.reps > 100 || seen.has(event.id)) return null;
   seen.add(event.id);
   if (seen.size > 16) seen.delete(seen.values().next().value);
   return event;

@@ -40,7 +40,7 @@ void completion(uint8_t *payload, size_t length) {
   const char *patient = event["patientId"] | "";
   const char *exercise = event["exerciseName"] | "";
   if (event["type"] != "exercise_completed" || !*id || !*patient || !*exercise ||
-      !event["reps"].is<int>() || event["reps"].as<int>() < 0 || event["reps"].as<int>() > 10000) return;
+      !event["reps"].is<int>() || event["reps"].as<int>() < 1 || event["reps"].as<int>() > 100) return;
   if (strcmp(patient, PATIENT_ID) != 0) return;
   for (const String &seen : recentEvents) if (seen == id) return;
   recentEvents[recentIndex] = id;

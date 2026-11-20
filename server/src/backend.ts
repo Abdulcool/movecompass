@@ -9,7 +9,7 @@ import { resolve, join } from 'node:path';
 import { createServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Expo, type ExpoPushMessage } from 'expo-server-sdk';
-import { getExercise } from '../../packages/pose/src/exercises';
+import { getExercise, exercises } from '../../packages/pose/src/exercises';
 
 type Role = 'patient' | 'staff';
 interface User { id: string; email: string; name: string; role: Role; password_hash: string }
@@ -29,7 +29,8 @@ interface Options {
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 200;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const email = (v: unknown): v is string => text(v) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-const repsValid = (v: unknown): v is number => Number.isInteger(v) && Number(v) >= 0 && Number(v) <= 10000;
+const repsValid = (v: unknown): v is number => Number.isInteger(v) && Number(v) >= 1 && Number(v) <= 100;
+const knownExercise = (id: unknown) => exercises.find(e => e.id === id);
 const timestampValid = (v: unknown): v is string => {
   if (typeof v !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(v) || !Number.isFinite(Date.parse(v))) return false;
   const [year, month, day] = v.slice(0, 10).split('-').map(Number);
@@ -163,29 +164,29 @@ export function createBackend(options: Options = {}) {
   app.post('/api/completions', auth, (req, res) => {
     const b = req.body; const errors: string[] = [];
     if (!object(b)) { res.status(400).json({errors: ['JSON object required']}); return; }
-    if (!text(b.exerciseId)) errors.push('exerciseId required');
-    if (!text(b.exerciseName)) errors.push('exerciseName required');
-    if (!repsValid(b.reps)) errors.push('reps must be an integer from 0 to 10000');
+    if (!knownExercise(b.exerciseId)) errors.push('Choose an exercise from your plan');
+    if (!repsValid(b.reps)) errors.push('Reps must be a whole number from 1 to 100');
     if (typeof b.source !== 'string' || !['manual', 'camera'].includes(b.source)) errors.push('source must be manual or camera');
     if (b.angles !== undefined && (!object(b.angles) || Object.entries(b.angles).some(([k, v]) => !text(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 360))) errors.push('angles must map joint names to finite ROM values from 0 to 360');
     if (errors.length) { res.status(400).json({errors}); return; }
     const user = byId(identity(res).id)!;
-    const event = persist({id: randomUUID(), type: 'exercise_completed', patientId: user.id, patientName: user.name, exerciseId: b.exerciseId as string, exerciseName: b.exerciseName as string, reps: b.reps as number, source: b.source as 'manual' | 'camera', transport: b.source === 'camera' ? 'camera' : 'app', deviceId: b.source === 'camera' ? 'movecompass-camera' : 'movecompass-patient-app', completedAt: new Date().toISOString(), angles: (b.angles ?? {}) as Record<string, number>});
+    const event = persist({id: randomUUID(), type: 'exercise_completed', patientId: user.id, patientName: user.name, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, source: b.source as 'manual' | 'camera', transport: b.source === 'camera' ? 'camera' : 'app', deviceId: b.source === 'camera' ? 'movecompass-camera' : 'movecompass-patient-app', completedAt: new Date().toISOString(), angles: (b.angles ?? {}) as Record<string, number>});
     res.status(201).json({event});
   });
   app.post('/api/esp32/notify', (req, res) => {
     const b = req.body; const errors: string[] = [];
     if (!object(b)) { res.status(400).json({errors: ['JSON object required']}); return; }
     if (b.type !== 'exercise_completed') errors.push('type must be exercise_completed');
-    for (const key of ['deviceId', 'patientName', 'exerciseId', 'exerciseName']) if (!text(b[key])) errors.push(`${key} required`);
-    if (!repsValid(b.reps)) errors.push('reps must be an integer from 0 to 10000');
+    for (const key of ['deviceId', 'patientName']) if (!text(b[key])) errors.push(`${key} required`);
+    if (!knownExercise(b.exerciseId)) errors.push('Choose an exercise from your plan');
+    if (!repsValid(b.reps)) errors.push('Reps must be a whole number from 1 to 100');
     if (!timestampValid(b.completedAt)) errors.push('completedAt must be an ISO8601 timestamp with timezone');
     if (typeof b.transport !== 'string' || !['wifi', 'app', 'camera'].includes(b.transport)) errors.push('transport must be wifi, app or camera');
     if (errors.length) { res.status(400).json({errors}); return; }
     const device = deviceById(b.deviceId as string);
     if ((device && !keyMatches(req.get('X-Device-Key'), device.key_hash)) || (!device && !allowLegacy)) { res.status(401).json({error: 'Invalid device credentials'}); return; }
     const owner = device ? byId(device.patient_id) : undefined;
-    const event = persist({id: randomUUID(), type: 'exercise_completed', deviceId: b.deviceId as string, patientId: owner?.id ?? null, patientName: owner?.name ?? b.patientName as string, exerciseId: b.exerciseId as string, exerciseName: b.exerciseName as string, reps: b.reps as number, completedAt: b.completedAt as string, transport: b.transport as CompletionEvent['transport'], source: 'device', angles: {}});
+    const event = persist({id: randomUUID(), type: 'exercise_completed', deviceId: b.deviceId as string, patientId: owner?.id ?? null, patientName: owner?.name ?? b.patientName as string, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, completedAt: b.completedAt as string, transport: b.transport as CompletionEvent['transport'], source: 'device', angles: {}});
     if (device) touch(device.id);
     res.status(202).json({event});
   });
