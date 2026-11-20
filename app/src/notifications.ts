@@ -48,6 +48,7 @@ export async function notify(body: string) {
       new Notification("MoveCompass care update", { body });
     return;
   }
+  if (await AsyncStorage.getItem("mc-push-registered")) return;
   const N = await import("expo-notifications");
   if ((await N.getPermissionsAsync()).granted)
     await N.scheduleNotificationAsync({

@@ -1,10 +1,12 @@
 import { it, expect, vi, beforeEach } from 'vitest';
 const mocks=vi.hoisted(()=>({get:vi.fn(),remove:vi.fn(),api:vi.fn()}));
+const local=vi.hoisted(()=>({getPermissionsAsync:vi.fn(),scheduleNotificationAsync:vi.fn()}));
+vi.mock('expo-notifications',()=>local);
 vi.mock('react-native',()=>({Platform:{OS:'ios'}}));
 vi.mock('expo-constants',()=>({default:{}}));
 vi.mock('@react-native-async-storage/async-storage',()=>({default:{getItem:mocks.get,multiRemove:mocks.remove}}));
 vi.mock('../src/api',()=>({api:mocks.api}));
-import { unregisterNotifications } from '../src/notifications';
+import { unregisterNotifications, notify } from '../src/notifications';
 beforeEach(()=>{vi.resetAllMocks();});
 it('deletes only this device push registration before clearing local state',async()=>{
   mocks.get.mockResolvedValue('ExponentPushToken[device]');
@@ -16,4 +18,10 @@ it('keeps registration for retry when the server cannot unregister it',async()=>
   mocks.get.mockResolvedValue('ExponentPushToken[device]');mocks.api.mockRejectedValue(new Error('offline'));
   await expect(unregisterNotifications('https://example.test','jwt')).rejects.toThrow('offline');
   expect(mocks.remove).not.toHaveBeenCalled();
+});
+it('does not duplicate remote push with a native local WS notification',async()=>{
+  mocks.get.mockResolvedValue('registered-token');await notify('completion');
+  expect(local.scheduleNotificationAsync).not.toHaveBeenCalled();
+  mocks.get.mockResolvedValue(null);local.getPermissionsAsync.mockResolvedValue({granted:true});
+  await notify('completion');expect(local.scheduleNotificationAsync).toHaveBeenCalledOnce();
 });
