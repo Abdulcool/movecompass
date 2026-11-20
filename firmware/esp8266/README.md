@@ -92,6 +92,7 @@ clinical delivery guarantee.
 
 WiFi attempts time out after 15 seconds. WiFi, HTTP recovery and WS use backoff
 capped at **60 seconds** and keep retrying. Ping/pong detects dead links. At boot,
+and after a WebSocket disconnection even if WiFi stays connected,
 `POST /api/devices/recover` refreshes the patient ID. With `DEVICE_PAIRING_SECRET`,
 the signed device credential recreates registration after a demo DB wipe. If a
 non-demo patient was erased, staff recreates the account and the board returns

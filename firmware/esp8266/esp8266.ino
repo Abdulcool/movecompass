@@ -96,8 +96,15 @@ int credentialRequest(const char *path, const String &body) {
   if (response.length() > 2048) return -1;
   JsonDocument doc;
   if (deserializeJson(doc, response)) return -1;
-  deviceId = doc["deviceId"] | ""; deviceKey = doc["key"] | ""; patientId = doc["patientId"] | "";
-  return deviceId.length() && deviceKey.length() >= 32 && deviceKey.length() <= 1024 && patientId.length() ? 200 : -1;
+  const String nextId = doc["deviceId"] | "", nextKey = doc["key"] | "", nextPatient = doc["patientId"] | "";
+  if (!nextId.length() || nextKey.length() < 32 || nextKey.length() > 1024 || !nextPatient.length()) return -1;
+  if (patientId.length() && patientId != nextPatient) {
+    lastSeq = 0; hasCursor = false; alerting = false; alertCount = 0; alertHead = 0; activeId = ""; activeSeq = 0;
+    for (String &id : recentEvents) id = "";
+    LittleFS.remove("/cursor.json"); outputs(false, false);
+  }
+  deviceId = nextId; deviceKey = nextKey; patientId = nextPatient;
+  return 200;
 }
 
 bool pairDevice(const String &code) {
@@ -218,6 +225,7 @@ void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
       break;
     case WStype_DISCONNECTED:
       backendConnected = false;
+      credentialsReady = false; credentialRetryAt = millis() + socketBackoff;
       socketClient.setReconnectInterval(socketBackoff);
       Serial.printf("Backend disconnected; retry in %lu ms\n", static_cast<unsigned long>(socketBackoff));
       socketBackoff = min(socketBackoff * 2, static_cast<uint32_t>(60000));
