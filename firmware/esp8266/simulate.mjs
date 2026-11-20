@@ -39,9 +39,13 @@ export function createVirtualEsp({ backendUrl, deviceId, deviceKey, patientId, i
   if (!['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) throw new Error('Use an HTTP(S) or WS(S) backend URL');
   url.protocol = ['https:', 'wss:'].includes(url.protocol) ? 'wss:' : 'ws:';
   url.searchParams.set('deviceId', deviceId); url.searchParams.set('key', deviceKey);
+  url.searchParams.set('ack','1');
   if (insecureTls) log('WARNING: TLS certificate verification disabled for demo');
   const events = new EventEmitter(), seen = new Set();
-  let socket, stopped = false, reconnectTimer, backoff = 1000, timers = [], activeEvent;
+  let socket, stopped = false, paused=false, cursor, reconnectTimer, backoff = 1000, timers = [], activeEvent;
+  const queue=[];
+  function acknowledgeDelivery(event){if(!Number.isSafeInteger(event?.seq))return;cursor=Math.max(cursor||0,event.seq);if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({kind:'ack',seq:event.seq}));}
+  function nextAlert(){if(!activeEvent&&queue.length)alert(queue.shift());}
   function cancelAlert() { for (const timer of timers) clearTimeout(timer); timers = []; activeEvent = undefined; }
   function alert(event) {
     cancelAlert(); activeEvent = event;
@@ -53,32 +57,39 @@ export function createVirtualEsp({ backendUrl, deviceId, deviceKey, patientId, i
     }
     timers.push(setTimeout(() => log('LED ON (hold 3000ms)'), 1000));
     timers.push(setTimeout(() => {
-      cancelAlert(); log('LED OFF; alert finished'); events.emit('finished', event);
+      cancelAlert(); acknowledgeDelivery(event); log('LED OFF; alert finished'); events.emit('finished', event);nextAlert();
     }, 4000));
     events.emit('alert', event);
   }
   function connect() {
+    if(stopped||paused)return;
+    if(cursor!==undefined)url.searchParams.set('since',String(cursor));
     log('Connecting backend; status LED slow blink');
     socket = new WebSocket(url, { rejectUnauthorized: !insecureTls, maxPayload: 32768, handshakeTimeout: 10000 });
     socket.on('open', () => { backoff = 1000; log('Backend connected; idle LED off'); events.emit('connected'); });
     socket.on('message', raw => {
+      let data;try{data=JSON.parse(raw.toString());}catch{}
+      if(data?.kind==='ready'&&Number.isSafeInteger(data.seq)){if(!activeEvent&&!queue.length)cursor=data.seq;return;}
+      if(Number.isSafeInteger(data?.event?.seq)&&cursor!==undefined&&data.event.seq<=cursor){acknowledgeDelivery(data.event);return;}
       const event = completionForPatient(raw, patientId, seen);
-      if (event) alert(event); else events.emit('ignored', raw);
+      if (event) {queue.push(event);nextAlert();} else events.emit('ignored', raw);
     });
     socket.on('error', () => log('WebSocket error; check network, host, TLS and credentials'));
     socket.on('close', () => {
       if (stopped) return;
       log(`Backend disconnected; status LED slow blink; retry in ${backoff}ms`);
       events.emit('disconnected');
-      reconnectTimer = setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 30000);
+      if(!paused)reconnectTimer = setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 30000);
     });
   }
   connect();
   return {
     events,
+    pause(){paused=true;clearTimeout(reconnectTimer);socket.terminate();},
+    resume(){paused=false;connect();},
     acknowledge() {
       if (!activeEvent) return;
-      cancelAlert(); log('ACK: LED OFF; buzzer OFF (local only)'); events.emit('acknowledged');
+      const event=activeEvent;cancelAlert();acknowledgeDelivery(event);log('ACK: LED OFF; buzzer OFF (no completion created)');events.emit('acknowledged');nextAlert();
     },
     stop() { stopped = true; clearTimeout(reconnectTimer); cancelAlert(); socket.terminate(); },
   };

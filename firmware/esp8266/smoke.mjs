@@ -10,7 +10,7 @@ const backend = createBackend({ seedDemo: true, dataDir: await mkdtemp(join(home
 await new Promise(resolve => backend.server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${backend.server.address().port}`;
 let sim;
-const watchdog = setTimeout(() => { console.error('FAIL firmware smoke test timed out'); process.exit(1); }, 20000);
+const watchdog = setTimeout(() => { console.error('FAIL firmware smoke test timed out'); process.exit(1); }, 35000);
 async function api(path, token, body) {
   const response = await fetch(base + path, {
     method: body ? 'POST' : 'GET',
@@ -61,4 +61,11 @@ try {
   const { events } = await api('/api/events', jane.token);
   assert.equal(events.length, 2); assert.equal(alerts, 2);
   console.log('PASS local acknowledgement silences alert without creating a completion');
+  const disconnected=once(sim.events,'disconnected');sim.pause();await disconnected;
+  const missed=[];
+  const replayed=new Promise(resolve=>{sim.events.on('finished',event=>{missed.push(event.id);if(missed.length===2)resolve();});});
+  await api('/api/completions',jane.token,camera);await api('/api/completions',jane.token,camera);
+  console.log('OFFLINE: two sets stored; reconnecting with last sequence');sim.resume();await replayed;
+  assert.equal(new Set(missed).size,2);assert.equal(alerts,4);
+  console.log('PASS disconnect → 2 completions → reconnect → 2 queued flash patterns, once per missed set');
 } finally { clearTimeout(watchdog); sim?.stop(); await backend.close(); }

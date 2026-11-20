@@ -16,6 +16,7 @@ export interface Event {
   source: string;
   setNumber?: number;
   totalSets?: number;
+  seq?: number;
 }
 export interface Device {
   deviceId: string;

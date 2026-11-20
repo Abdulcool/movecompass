@@ -15,12 +15,14 @@ type Role = 'patient' | 'staff';
 interface User { id: string; email: string; name: string; role: Role; password_hash: string }
 interface Identity { id: string; role: Role; exp: number; jti: string }
 interface Device { id: string; name: string; patient_id: string; key_hash: string; last_seen: string | null }
+interface Client {user?:Identity;device?:Device;alive:boolean;cursor:number;ack?:boolean;pending?:number;replaying?:boolean;waiting?:boolean}
 export interface CompletionEvent {
   id: string; type: 'exercise_completed'; patientId: string | null; patientName: string;
   exerciseId: string; exerciseName: string; reps: number; deviceId: string;
   completedAt: string; transport: 'wifi' | 'app' | 'camera'; source: 'manual' | 'camera' | 'device';
   angles: Record<string, number>;
   setNumber?: number; totalSets?: number;
+  seq?: number;
 }
 interface Options {
   seedDemo?: boolean;
@@ -115,7 +117,9 @@ export function createBackend(options: Options = {}) {
   app.use(['/api/auth/login', '/api/auth/register', '/api/devices/pair'], throttle);
   const server = createServer(app);
   const wss = new WebSocketServer({noServer: true, maxPayload: 32768});
-  const clients = new Map<WebSocket, {user?: Identity; device?: Device; alive: boolean}>();
+  const clients = new Map<WebSocket, Client>();
+  const latestSeq=()=> (db.prepare('SELECT coalesce(max(id),0) seq FROM events').get() as {seq:number}).seq;
+  const decode=(row:{id:number;payload:string}):CompletionEvent=>({...JSON.parse(row.payload),seq:row.id});
   const identity = (res: Response) => res.locals.identity as Identity;
   const zoneFor = (id:string) => (db.prepare('SELECT zone FROM patient_timezones WHERE user_id = ?').get(id) as {zone:string}|undefined)?.zone || 'UTC';
   const localDay = (timestamp:string,zone:string) => new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(timestamp));
@@ -136,10 +140,33 @@ export function createBackend(options: Options = {}) {
     if (identity(res).role !== 'staff') { res.status(403).json({error: 'Staff access required'}); return; } next();
   };
   const send = (socket: WebSocket, data: unknown) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); };
+  const nextRow=(client:Client,through:number)=>{
+    const patient=client.device?.patient_id ?? (client.user?.role==='staff'?undefined:client.user?.id);
+    return (patient ? db.prepare('SELECT id,payload FROM events WHERE id > ? AND id <= ? AND patient_id = ? ORDER BY id LIMIT 1').get(client.cursor,through,patient) : db.prepare('SELECT id,payload FROM events WHERE id > ? AND id <= ? ORDER BY id LIMIT 1').get(client.cursor,through)) as {id:number;payload:string}|undefined;
+  };
+  const pumpDevice=(ws:WebSocket,client:Client)=>{
+    if(client.pending!==undefined || client.waiting || ws.readyState!==WebSocket.OPEN)return;
+    const through=latestSeq(),row=nextRow(client,through);
+    if(!row){send(ws,{kind:'ready',seq:through});return;}
+    client.pending=row.id;send(ws,{kind:'event',event:decode(row)});
+  };
+  const pumpReplay=(ws:WebSocket,client:Client)=>{
+    if(!clients.has(ws)||ws.readyState!==WebSocket.OPEN)return;
+    const through=latestSeq(),row=nextRow(client,through);
+    if(!row){client.replaying=false;send(ws,{kind:'ready',seq:through});return;}
+    client.cursor=row.id;
+    ws.send(JSON.stringify({kind:'event',event:decode(row)}),error=>{if(!error)pumpReplay(ws,client);});
+  };
   const broadcast = (message: unknown, patientId: string | null) => {
     for (const [socket, client] of clients) {
       if (client.user && client.user.exp * 1000 <= Date.now()) { socket.close(1008, 'Session expired'); continue; }
-      if ((client.device && client.device.patient_id === patientId) || client.user?.role === 'staff' || client.user?.id === patientId) send(socket, message);
+      if ((client.device && client.device.patient_id === patientId) || client.user?.role === 'staff' || client.user?.id === patientId) {
+        if(object(message)&&message.kind==='event') {
+          if(client.waiting || client.replaying)continue;
+          if(client.device&&client.ack){pumpDevice(socket,client);continue;}
+        }
+        send(socket,message);
+      }
     }
   };
   const expo = new Expo();
@@ -159,7 +186,9 @@ export function createBackend(options: Options = {}) {
     }
     db.transaction(()=>{
       if(event.patientId){event.setNumber=(dailyCounts(event.patientId,event.completedAt)[event.exerciseId]||0)+1;event.totalSets=knownExercise(event.exerciseId)?.sets;}
-      db.prepare('INSERT INTO events(patient_id, payload) VALUES (?, ?)').run(event.patientId, JSON.stringify(event));
+      const inserted=db.prepare('INSERT INTO events(patient_id, payload) VALUES (?, ?)').run(event.patientId, JSON.stringify(event));
+      event.seq=Number(inserted.lastInsertRowid);
+      db.prepare('UPDATE events SET payload = ? WHERE id = ?').run(JSON.stringify(event),event.seq);
       if(submission)db.prepare('INSERT INTO submission_keys VALUES (?, ?, ?)').run(submission.owner,submission.key,JSON.stringify(event));
     })();
     broadcast({kind: 'event', event}, event.patientId);
@@ -252,8 +281,8 @@ export function createBackend(options: Options = {}) {
     const device = deviceById(req.get('X-Device-Id') ?? '');
     const validDevice = device && keyMatches(req.get('X-Device-Key'), device.key_hash);
     if (user?.role !== 'staff' && !validDevice) { res.status(user ? 403 : 401).json({error: 'Staff or device authentication required'}); return; }
-    const row = (user?.role === 'staff' ? db.prepare('SELECT payload FROM events ORDER BY id DESC LIMIT 1').get() : db.prepare('SELECT payload FROM events WHERE patient_id = ? ORDER BY id DESC LIMIT 1').get(device!.patient_id)) as {payload: string} | undefined;
-    res.json({event: row ? JSON.parse(row.payload) : null});
+    const row = (user?.role === 'staff' ? db.prepare('SELECT id,payload FROM events ORDER BY id DESC LIMIT 1').get() : db.prepare('SELECT id,payload FROM events WHERE patient_id = ? ORDER BY id DESC LIMIT 1').get(device!.patient_id)) as {id:number;payload: string} | undefined;
+    res.json({event: row ? decode(row) : null});
   });
   app.get('/api/events', auth, (req, res) => {
     const limit = req.query.limit === undefined ? 50 : Number(req.query.limit);
@@ -263,7 +292,7 @@ export function createBackend(options: Options = {}) {
     const u = identity(res);
     const rows = (u.role === 'staff' ? db.prepare('SELECT id,payload FROM events WHERE id < ? ORDER BY id DESC LIMIT ?').all(before,limit) : db.prepare('SELECT id,payload FROM events WHERE patient_id = ? AND id < ? ORDER BY id DESC LIMIT ?').all(u.id,before,limit)) as {id:number;payload: string}[];
     const counts = db.prepare(`SELECT count(*) AS total, coalesce(sum(CASE WHEN julianday(json_extract(payload, '$.completedAt')) >= julianday(?) THEN 1 ELSE 0 END), 0) AS weeklyTotal FROM events ${u.role === 'staff' ? '' : 'WHERE patient_id = ?'}`).get(new Date(Date.now()-7*86400000).toISOString(), ...(u.role === 'staff' ? [] : [u.id])) as {total: number; weeklyTotal: number};
-    res.json({events: rows.map(r => JSON.parse(r.payload)), ...counts, dailySets:dailyCounts(u.id), nextBefore:rows.length===limit?rows[rows.length-1].id:null});
+    res.json({events: rows.map(decode), ...counts, dailySets:dailyCounts(u.id), nextBefore:rows.length===limit?rows[rows.length-1].id:null});
   });
   app.post('/api/devices', auth, staff, (req, res) => {
     const b = req.body;
@@ -298,8 +327,10 @@ export function createBackend(options: Options = {}) {
     const user = verify(url.searchParams.get('token') ?? '');
     const device = deviceById(url.searchParams.get('deviceId') ?? '');
     if (url.pathname !== '/ws' || (!user && (!device || !keyMatches(url.searchParams.get('key'), device.key_hash)))) { socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return; }
+    const rawSince=url.searchParams.get('since'),since=rawSince===null?undefined:Number(rawSince);
+    if(since!==undefined && (!Number.isSafeInteger(since)||since<0)){socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');return;}
     wss.handleUpgrade(req, socket, head, ws => {
-      const client = {user: user ?? undefined, device: user ? undefined : device, alive: true};
+      const client:Client = {user: user ?? undefined, device: user ? undefined : device, alive: true,cursor:Math.min(since??latestSeq(),latestSeq()),ack:!user&&url.searchParams.get('ack')==='1',waiting:!user&&url.searchParams.get('resume')==='1'};
       clients.set(ws, client);
       if (client.device) { touch(client.device.id); broadcast({kind: 'device', deviceId: client.device.id, online: true}, client.device.patient_id); }
       ws.on('error', () => {});
@@ -316,12 +347,20 @@ export function createBackend(options: Options = {}) {
         if (!client.device) { send(ws, {kind: 'error', error: 'Only devices may submit button events'}); return; }
         try {
           const b: unknown = JSON.parse(raw.toString());
+          if(object(b)&&b.kind==='resume'&&client.ack){
+            if(b.since!==undefined&&(!Number.isSafeInteger(b.since)||Number(b.since)<0))throw new Error('Invalid cursor');
+            client.cursor=Math.min(Number(b.since??latestSeq()),latestSeq());client.pending=undefined;client.waiting=false;pumpDevice(ws,client);return;
+          }
+          if(object(b)&&b.kind==='ack'&&client.ack){
+            if(b.seq===client.pending){client.cursor=Number(b.seq);client.pending=undefined;pumpDevice(ws,client);}return;
+          }
           if (!object(b) || b.kind !== 'button' || (b.exerciseId !== undefined && !text(b.exerciseId)) || (b.reps !== undefined && !repsValid(b.reps))) throw new Error('Invalid button payload');
           const exercise = getExercise(b.exerciseId as string ?? 'sit-to-stand');
           const owner = byId(client.device.patient_id)!; touch(client.device.id);
           persist({id: randomUUID(), type: 'exercise_completed', patientId: owner.id, patientName: owner.name, deviceId: client.device.id, exerciseId: exercise.id, exerciseName: exercise.name, reps: b.reps as number ?? exercise.reps, completedAt: new Date().toISOString(), transport: 'wifi', source: 'device', angles: {}});
         } catch { send(ws, {kind: 'error', error: 'Invalid button payload or exerciseId'}); }
       });
+      if(!client.waiting){if(client.device&&client.ack)pumpDevice(ws,client);else if(since!==undefined){client.replaying=true;pumpReplay(ws,client);}else send(ws,{kind:'ready',seq:latestSeq()});}
     });
   });
   const heartbeat = setInterval(() => {

@@ -23,6 +23,12 @@ uint32_t wifiStarted = 0, wifiRetryAt = 0, wifiBackoff = 1000;
 uint32_t socketBackoff = 1000, alertStarted = 0, buttonChanged = 0;
 String recentEvents[16];
 uint8_t recentIndex = 0;
+struct PendingAlert { String id; uint64_t seq; };
+PendingAlert alerts[16];
+uint8_t alertHead = 0, alertCount = 0;
+String activeId;
+uint64_t activeSeq = 0, lastSeq = 0;
+bool hasCursor = false;
 
 bool due(uint32_t now, uint32_t deadline) {
   return static_cast<int32_t>(now - deadline) >= 0;
@@ -144,10 +150,38 @@ String queryValue(const char *value) {
   return result;
 }
 
+void saveCursor() {
+  JsonDocument doc; doc["deviceId"] = deviceId; doc["seq"] = lastSeq;
+  File file = LittleFS.open("/cursor.tmp", "w"); if (!file) return;
+  serializeJson(doc, file); file.flush(); file.close(); LittleFS.rename("/cursor.tmp", "/cursor.json");
+}
+
+void deliveryAck(uint64_t seq) {
+  if (!seq) return;
+  lastSeq = max(lastSeq, seq); hasCursor = true; saveCursor();
+  if (backendConnected) { JsonDocument doc; doc["kind"] = "ack"; doc["seq"] = seq; String message; serializeJson(doc, message); socketClient.sendTXT(message); }
+}
+
+void nextAlert() {
+  if (alerting || !alertCount) return;
+  activeId = alerts[alertHead].id; activeSeq = alerts[alertHead].seq;
+  alerts[alertHead].id = ""; alertHead = (alertHead + 1) % 16; alertCount--;
+  Serial.println("FLASH: 5 x (100ms ON / 100ms OFF), then ON 3000ms");
+  alertStarted = millis(); alerting = true;
+}
+
+void finishAlert() {
+  alerting = false;
+  recentEvents[recentIndex] = activeId; recentIndex = (recentIndex + 1) % 16;
+  deliveryAck(activeSeq); activeId = ""; activeSeq = 0;
+  outputs(false, false); nextAlert();
+}
+
 void completion(uint8_t *payload, size_t length) {
   if (length > 4096) { Serial.println("Ignored oversized message"); return; }
   JsonDocument document;
   if (deserializeJson(document, payload, length)) { Serial.println("Ignored invalid JSON"); return; }
+  if (document["kind"] == "ready" && document["seq"].is<uint64_t>() && !alerting && !alertCount) { lastSeq = document["seq"].as<uint64_t>(); hasCursor = true; saveCursor(); return; }
   if (document["kind"] != "event") return;
   JsonObject event = document["event"].as<JsonObject>();
   const char *id = event["id"] | "";
@@ -156,12 +190,15 @@ void completion(uint8_t *payload, size_t length) {
   if (event["type"] != "exercise_completed" || !*id || !*patient || !*exercise ||
       !event["reps"].is<int>() || event["reps"].as<int>() < 1 || event["reps"].as<int>() > 100) return;
   if (patientId != patient) return;
-  for (const String &seen : recentEvents) if (seen == id) return;
-  recentEvents[recentIndex] = id;
-  recentIndex = (recentIndex + 1) % 16;
+  const uint64_t seq = event["seq"] | static_cast<uint64_t>(0);
+  if (hasCursor && seq && seq <= lastSeq) { deliveryAck(seq); return; }
+  if (activeId == id) return;
+  for (uint8_t i = 0; i < alertCount; i++) if (alerts[(alertHead + i) % 16].id == id) return;
+  for (const String &seen : recentEvents) if (seen == id) { deliveryAck(seq); return; }
+  if (alertCount >= 16) { socketClient.disconnect(); return; }
+  alerts[(alertHead + alertCount) % 16] = {String(id), seq}; alertCount++;
   Serial.print("EVENT "); serializeJson(event, Serial); Serial.println();
-  Serial.println("FLASH: 5 x (100ms ON / 100ms OFF), then ON 3000ms");
-  alertStarted = millis(); alerting = true;
+  nextAlert();
 }
 
 void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
@@ -170,6 +207,7 @@ void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
       backendConnected = true; socketBackoff = 1000;
       socketClient.setReconnectInterval(socketBackoff);
       Serial.println("Backend connected; idle LED off");
+      { JsonDocument doc; doc["kind"] = "resume"; if (hasCursor) doc["since"] = lastSeq; String message; serializeJson(doc, message); socketClient.sendTXT(message); }
       break;
     case WStype_DISCONNECTED:
       backendConnected = false;
@@ -184,7 +222,7 @@ void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
 
 void startBackend() {
   socketBackoff = 1000;
-  String path = "/ws?deviceId=" + queryValue(deviceId.c_str()) + "&key=" + queryValue(deviceKey.c_str());
+  String path = "/ws?ack=1&resume=1&deviceId=" + queryValue(deviceId.c_str()) + "&key=" + queryValue(deviceKey.c_str());
   if (backendTls) {
     socketClient.beginSSL(backendHost.c_str(), backendPort, path.c_str());
   } else socketClient.begin(backendHost.c_str(), backendPort, path.c_str());
@@ -224,7 +262,7 @@ void updateAlert(uint32_t now) {
     if (now - buttonChanged >= 40 && buttonStable != buttonRaw) {
       buttonStable = buttonRaw;
       if (buttonStable && alerting) {
-        alerting = false; Serial.println("ACK: alert silenced locally");
+        Serial.println("ACK: alert silenced; delivery acknowledged, no completion created"); finishAlert();
       }
     }
   }
@@ -234,7 +272,8 @@ void updateAlert(uint32_t now) {
       const bool on = elapsed >= 1000 || elapsed % 200 < 100;
       outputs(on, on); return;
     }
-    alerting = false; Serial.println("Alert finished");
+    Serial.println("Alert finished"); finishAlert();
+    if (alerting) return;
   }
   outputs(!backendConnected && now % 2000 < 1000, false);
 }
@@ -249,6 +288,7 @@ void setup() {
   if (!LittleFS.begin()) { Serial.println("Storage unavailable; erase flash and reinstall"); while (true) { outputs(millis() % 200 < 100, false); delay(50); } }
   const bool force = setupButtonHeld();
   if (!loadConfig() || force) configurePortal();
+  { File file = LittleFS.open("/cursor.json", "r"); if (file && file.size() < 512) { JsonDocument doc; if (!deserializeJson(doc, file) && doc["deviceId"] == deviceId && doc["seq"].is<uint64_t>()) { lastSeq = doc["seq"].as<uint64_t>(); hasCursor = true; } } }
   if (backendTls) Serial.println("WARNING: demo HTTPS/WSS uses TLS without certificate verification");
 }
 

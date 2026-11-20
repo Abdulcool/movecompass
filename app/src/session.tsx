@@ -16,6 +16,7 @@ import { colors } from "./ui";
 function useLive(
   url: string,
   token: string,
+  cursorKey: string,
   onMessage: (data: any) => void,
   onReconnect: () => void,
 ) {
@@ -25,14 +26,19 @@ function useLive(
   reconnect.current = onReconnect;
   const [connected, setConnected] = useState(false);
   useEffect(() => {
-    if (!token || !url) return;
+    if (!token || !url || !cursorKey) return;
     let stopped = false;
     let socket: WebSocket;
     let timer: ReturnType<typeof setTimeout>;
     let attempt = 0;
+    let cursor:number|undefined;
+    let writes:Promise<unknown>=Promise.resolve();
+    const remember=(seq:number)=>{cursor=seq;writes=writes.catch(()=>{}).then(()=>AsyncStorage.setItem(cursorKey,String(seq)));};
     function connect() {
+      if(stopped || socket?.readyState===WebSocket.OPEN || socket?.readyState===WebSocket.CONNECTING)return;
+      clearTimeout(timer);
       socket = new WebSocket(
-        url.replace(/^http/, "ws") + "/ws?token=" + encodeURIComponent(token),
+        url.replace(/^http/, "ws") + "/ws?token=" + encodeURIComponent(token)+(cursor===undefined?'':`&since=${cursor}`),
       );
       socket.onopen = () => {
         attempt = 0;
@@ -41,7 +47,10 @@ function useLive(
       };
       socket.onmessage = (e) => {
         try {
-          handler.current(JSON.parse(e.data));
+          const data=JSON.parse(e.data);
+          if(data.kind==='ready'&&Number.isSafeInteger(data.seq)) {if(cursor!==undefined&&data.seq<cursor)handler.current({kind:'reset'});remember(data.seq);return;}
+          if(data.kind==='event'&&Number.isSafeInteger(data.event?.seq)) {if(cursor!==undefined&&data.event.seq<=cursor)return;remember(data.event.seq);}
+          handler.current(data);
         } catch {}
       };
       socket.onerror = () => socket.close();
@@ -51,14 +60,17 @@ function useLive(
           timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** attempt++));
       };
     }
-    connect();
+    void AsyncStorage.getItem(cursorKey).then(raw=>{if(raw!==null && Number.isSafeInteger(Number(raw))&&Number(raw)>=0)cursor=Number(raw);if(!stopped)connect();}).catch(()=>{if(!stopped)connect();});
+    const online=()=>{attempt=0;connect();};
+    if(typeof window!=='undefined')window.addEventListener('online',online);
     return () => {
       stopped = true;
       clearTimeout(timer);
       socket?.close();
       setConnected(false);
+      if(typeof window!=='undefined')window.removeEventListener('online',online);
     };
-  }, [url, token]);
+  }, [url, token,cursorKey]);
   return connected;
 }
 function useSessionState() {
@@ -163,7 +175,9 @@ function useSessionState() {
   const connected = useLive(
     base,
     token,
+    user?`mc-cursor:${base}:${user.id}`:'',
     (data) => {
+      if(data.kind==='reset'){setEvents([]);setTotal(0);setWeeklyTotal(0);setDailySets({});void refresh();return;}
       if (data.kind === "event") {
         void refresh();
         setEvents((current) =>
