@@ -1,4 +1,4 @@
-const CACHE = 'movecompass-shell-v2';
+const CACHE = 'movecompass-shell-v3';
 self.addEventListener('install', event => {
   event.waitUntil((async()=>{
     const cache=await caches.open(CACHE),response=await fetch('/');
@@ -22,6 +22,6 @@ self.addEventListener('fetch',event=>{
       catch {return (await cache.match(event.request))||(await cache.match('/'));}
     }
     const saved=await cache.match(event.request);if(saved)return saved;
-    const r=await fetch(event.request);if(r.ok)await cache.put(event.request,r.clone());return r;
+    const r=await fetch(event.request);if(r.ok)event.waitUntil(cache.put(event.request,r.clone()));return r;
   })());
 });

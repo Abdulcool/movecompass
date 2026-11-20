@@ -1,4 +1,4 @@
-import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
+import { PoseLandmarker } from "@mediapipe/tasks-vision";
 import { createTracker, getExercise, joints, visible } from "@movecompass/pose";
 import { angleSummary, relevantJoints, rangeProgress } from "./metrics";
 import { setProgress } from './progress';
@@ -12,6 +12,20 @@ const video = document.querySelector<HTMLVideoElement>("#video")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#overlay")!;
 const ctx = canvas.getContext("2d")!;
 const el = (id: string) => document.getElementById(id)!;
+declare const __TRACKER_ASSETS__:{base:string;sizes:Record<string,number>};
+async function loadAssets(){
+  const received:Record<string,number>={},total=Object.values(__TRACKER_ASSETS__.sizes).reduce((a,b)=>a+b,0);
+  const result=await Promise.all(Object.keys(__TRACKER_ASSETS__.sizes).map(async name=>{
+    const response=await fetch(`${__TRACKER_ASSETS__.base}/${name}`);if(!response.ok)throw new Error('Tracker download failed. Please try again.');
+    const reader=response.body?.getReader(),chunks:Uint8Array[]=[];received[name]=0;
+    if(!reader){const buffer=await response.arrayBuffer();return [name,name.endsWith('.task')?new Uint8Array(buffer):undefined] as const;}
+    while(true){const {done,value}=await reader.read();if(done)break;received[name]+=value.length;if(name.endsWith('.task'))chunks.push(value);
+      const percent=Math.min(100,Math.round(Object.values(received).reduce((a,b)=>a+b,0)/total*100));el('download').textContent=`Preparing local tracker · ${percent}%`;el('download-progress').setAttribute('value',String(percent));}
+    if(!name.endsWith('.task'))return [name,undefined] as const;
+    const model=new Uint8Array(received[name]);let offset=0;for(const chunk of chunks){model.set(chunk,offset);offset+=chunk.length;}return [name,model] as const;
+  }));
+  return result.find(([name])=>name.endsWith('.task'))![1]!;
+}
 const params = new URLSearchParams(location.search);
 let seedAngles: Record<string,number> = {};
 try { const seed=JSON.parse(params.get('angles')||'{}');if(seed && typeof seed==='object' && !Array.isArray(seed) && Object.values(seed).every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=360))seedAngles=seed; } catch {}
@@ -103,10 +117,12 @@ async function start() {
     stream = media;
     video.srcObject = media;
     await video.play();
-    const files = await FilesetResolver.forVisionTasks("/tracker/wasm");
+    el('download').hidden=false;el('download-progress').hidden=false;
+    const modelAssetBuffer=await loadAssets();
+    const files={wasmLoaderPath:`${__TRACKER_ASSETS__.base}/vision_wasm_internal.js`,wasmBinaryPath:`${__TRACKER_ASSETS__.base}/vision_wasm_internal.wasm`};
     const options = {
       baseOptions: {
-        modelAssetPath: "/tracker/pose_landmarker_full.task",
+        modelAssetBuffer,
         delegate: "GPU" as "GPU" | "CPU",
       },
       runningMode: "VIDEO" as const,
@@ -129,6 +145,7 @@ async function start() {
       return;
     }
     pose = detector;
+    el('download').hidden=true;el('download-progress').hidden=true;
     const tracker = createTracker(exercise.id),
       summary = angleSummary(),
       keys = relevantJoints(exercise.id);
