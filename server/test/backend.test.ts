@@ -42,6 +42,13 @@ beforeEach(async () => {
 afterEach(async()=>{for(const s of sockets)s.terminate();await backend.close();rmSync(dir,{recursive:true,force:true});});
 
 describe('auth and isolation',()=>{
+  it('pushes to staff and the owning patient but never another patient',async()=>{
+    const jane=await login(),staff=await login('staff');
+    const other=await request(backend.app).post('/api/auth/register').send({email:'push-other@example.com',name:'Other',password:'password123'}).expect(201);
+    for(const [token,label]of [[jane,'jane'],[staff,'staff'],[other.body.token,'other']])await request(backend.app).post('/api/push/register').auth(token,{type:'bearer'}).send({token:`ExponentPushToken[${label}]`}).expect(201);
+    await request(backend.app).post('/api/completions').auth(jane,{type:'bearer'}).send(completion).expect(201);
+    await expect.poll(()=>push.flat().map(message=>message.to).sort()).toEqual(['ExponentPushToken[jane]','ExponentPushToken[staff]']);
+  });
   it('revokes the signed-out JWT while other sessions remain valid',async()=>{
     const first=await login(),second=await login();
     await request(backend.app).post('/api/auth/logout').auth(first,{type:'bearer'}).send({}).expect(200);

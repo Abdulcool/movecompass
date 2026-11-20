@@ -219,7 +219,7 @@ export function createBackend(options: Options = {}) {
       if(submission)db.prepare('INSERT INTO submission_keys VALUES (?, ?, ?)').run(submission.owner,submission.key,JSON.stringify(event));
     })();
     broadcast({kind: 'event', event}, event.patientId);
-    const tokens = db.prepare("SELECT token FROM push_tokens WHERE role = 'staff'").all() as {token: string}[];
+    const tokens = db.prepare("SELECT token FROM push_tokens WHERE role = 'staff' OR (role = 'patient' AND user_id = ?)").all(event.patientId) as {token: string}[];
     if (tokens.length) {
       const messages: ExpoPushMessage[] = tokens.map(({token}) => ({to: token, sound: 'default', title: 'MoveCompass care update', body: `${event.patientName} completed ${event.exerciseName}: ${event.reps} reps · set ${event.setNumber}/${event.totalSets}.`, data: {event}}));
       const pending = Promise.resolve().then(() => (options.sendPush ?? defaultPush)(messages)).catch(() => { console.warn('Expo push delivery failed'); });
