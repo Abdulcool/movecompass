@@ -184,7 +184,7 @@ export function createBackend(options: Options = {}) {
     if (errors.length) { res.status(400).json({errors}); return; }
     const device = deviceById(b.deviceId as string);
     if ((device && !keyMatches(req.get('X-Device-Key'), device.key_hash)) || (!device && !allowLegacy)) { res.status(401).json({error: 'Invalid device credentials'}); return; }
-    const owner = device ? byId(device.patient_id) : (db.prepare("SELECT * FROM users WHERE lower(name) = lower(?) AND role = 'patient' ORDER BY id LIMIT 1").get(b.patientName) as User | undefined);
+    const owner = device ? byId(device.patient_id) : undefined;
     const event = persist({id: randomUUID(), type: 'exercise_completed', deviceId: b.deviceId as string, patientId: owner?.id ?? null, patientName: owner?.name ?? b.patientName as string, exerciseId: b.exerciseId as string, exerciseName: b.exerciseName as string, reps: b.reps as number, completedAt: b.completedAt as string, transport: b.transport as CompletionEvent['transport'], source: 'device', angles: {}});
     if (device) touch(device.id);
     res.status(202).json({event});

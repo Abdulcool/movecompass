@@ -91,6 +91,7 @@ describe('completion contract and storage',()=>{
     const accepted=await request(backend.app).post('/api/esp32/notify').send(payload);
     expect((await request(backend.app).post('/api/esp32/notify').send({...payload,transport:['wifi']})).status).toBe(400);
     expect(accepted.status).toBe(202);expect(accepted.body.event.reps).toBe(6);
+    expect(accepted.body.event.patientId).toBeNull();
     expect((await request(backend.app).get('/api/esp32/latest').auth(staff,{type:'bearer'})).body.event.id).toBe(accepted.body.event.id);
   });
   it('persists events, users, push tokens, device keys and signing secret across restarts',async()=>{
