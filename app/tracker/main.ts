@@ -4,6 +4,7 @@ import { angleSummary, relevantJoints, rangeProgress } from "./metrics";
 import { setProgress } from './progress';
 import { cameraGuidance } from '../src/camera-errors';
 import {createPersonSelector} from './person';
+import {enhanceDimFrame} from './lighting';
 declare global {
   interface Window {
     ReactNativeWebView?: { postMessage: (message: string) => void };
@@ -159,7 +160,7 @@ async function start() {
       const x=1-(event.clientX-rect.left-(rect.width-width)/2)/width,y=(event.clientY-rect.top-(rect.height-height)/2)/height;
       if(x>=0&&x<=1&&y>=0&&y<=1&&selector.choose(currentPeople,{x,y})){tracker.reset();progress.begin();}
     };
-    const input=document.createElement('canvas'),inputContext=input.getContext('2d',{alpha:false})!;
+    const input=document.createElement('canvas'),inputContext=input.getContext('2d',{alpha:false,willReadFrequently:true})!;
     let nextInferenceAt=0,averageCost=0;
     function frame() {
       if (stopped || run !== generation || !pose) return;
@@ -170,6 +171,8 @@ async function start() {
           const inputWidth=Math.min(320,video.videoWidth),inputHeight=Math.round(video.videoHeight*inputWidth/video.videoWidth);
           if(input.width!==inputWidth||input.height!==inputHeight){input.width=inputWidth;input.height=inputHeight;}
           inputContext.drawImage(video,0,0,inputWidth,inputHeight);
+          const pixels=inputContext.getImageData(0,0,inputWidth,inputHeight),lighting=enhanceDimFrame(pixels.data);
+          if(lighting.enhanced)inputContext.putImageData(pixels,0,0);
           const result = pose.detectForVideo(input, timestampMs);
           currentPeople=result.landmarks;
           const selected=selector.update(result.landmarks),index=selected.index;
@@ -267,7 +270,7 @@ async function start() {
             : "Complete a controlled movement to see your range of motion.";
           window.dispatchEvent(
             new CustomEvent("movecompass:frame", {
-              detail: { timestampMs,inferenceMs,inputWidth,inputHeight, ...output, reps:current.reps },
+              detail: { timestampMs,inferenceMs,inputWidth,inputHeight,lighting, ...output, reps:current.reps },
             }),
           );
           if (current.reps !== lastReps || timestampMs-lastEmit>=500) {
