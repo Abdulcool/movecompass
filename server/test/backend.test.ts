@@ -100,6 +100,21 @@ describe('completion contract and storage',()=>{
     const staff=await login('staff'),d=await device(staff),data={...payload,deviceId:d.deviceId};
     const post=()=>request(backend.app).post('/api/esp32/notify').set('X-Device-Key',d.deviceKey).set('Idempotency-Key','board-set-1').send(data);
     const a=await post(),b=await post();expect(a.status).toBe(202);expect(b.body.event.id).toBe(a.body.event.id);
+    await request(backend.app).post('/api/esp32/notify').set('X-Device-Key',d.deviceKey).set('Idempotency-Key','board-set-1').send({...data,reps:7}).expect(409);
+  });
+  it('derives a durable key for identical device HTTP submissions without a header',async()=>{
+    const staff=await login('staff'),d=await device(staff),data={...payload,deviceId:d.deviceId};
+    const a=await request(backend.app).post('/api/esp32/notify').set('X-Device-Key',d.deviceKey).send(data).expect(202);
+    const b=await request(backend.app).post('/api/esp32/notify').set('X-Device-Key',d.deviceKey).send(data).expect(202);
+    expect(a.body.event.id).toBe(b.body.event.id);expect(backend.db.prepare('SELECT count(*) n FROM events').get()).toEqual({n:1});
+  });
+  it('deduplicates rapid identical WS button messages and rejects changed payloads for a message id',async()=>{
+    const staff=await login('staff'),d=await device(staff),socket=await connect(`deviceId=${d.deviceId}&key=${encodeURIComponent(d.deviceKey)}`);
+    const first=message(socket,'event');socket.send(JSON.stringify({kind:'button',exerciseId:'wall-angels',reps:8}));await first;
+    socket.send(JSON.stringify({kind:'button',exerciseId:'wall-angels',reps:8}));
+    const next=message(socket,'event');socket.send(JSON.stringify({kind:'button',exerciseId:'sit-to-stand',reps:6,id:'one'}));await next;
+    const conflict=message(socket,'error');socket.send(JSON.stringify({kind:'button',exerciseId:'sit-to-stand',reps:7,id:'one'}));
+    expect((await conflict).status).toBe(409);expect(backend.db.prepare('SELECT count(*) n FROM events').get()).toEqual({n:2});
   });
   it('logs one set per manual or camera save and reports daily set progress',async()=>{
     const token=await login();

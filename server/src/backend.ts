@@ -208,10 +208,15 @@ export function createBackend(options: Options = {}) {
     }
   };
   const pendingPush = new Set<Promise<void>>();
-  const persist = (event: CompletionEvent, submission?: {owner: string; key: string}) => {
+  const persist = (event: CompletionEvent, submission?: {owner: string; key: string;generatedTime?:boolean}) => {
     if (submission) {
       const previous=db.prepare('SELECT payload FROM submission_keys WHERE owner = ? AND key = ?').get(submission.owner,submission.key) as {payload:string}|undefined;
-      if(previous)return JSON.parse(previous.payload) as CompletionEvent;
+      if(previous){
+        const original=JSON.parse(previous.payload) as CompletionEvent;
+        const signature=(e:CompletionEvent)=>JSON.stringify([e.patientId,e.deviceId,e.exerciseId,e.reps,submission.generatedTime?null:Date.parse(e.completedAt),e.transport,e.source,Object.entries(e.angles).sort(([a],[b])=>a.localeCompare(b))]);
+        if(signature(original)!==signature(event))throw new CompletionConflict('This idempotency key was already used for a different set');
+        return original;
+      }
     }
     db.transaction(()=>{
       if(event.patientId){event.setNumber=(dailyCounts(event.patientId,event.completedAt)[event.exerciseId]||0)+1;event.totalSets=knownExercise(event.exerciseId)?.sets;if(event.totalSets&&event.setNumber>event.totalSets)throw new CompletionConflict('All sets done today');}
@@ -291,7 +296,7 @@ export function createBackend(options: Options = {}) {
     if (b.angles !== undefined && (!object(b.angles) || Object.entries(b.angles).some(([k, v]) => !text(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 360))) errors.push('angles must map joint names to finite ROM values from 0 to 360');
     if (errors.length) { res.status(400).json({errors}); return; }
     const user = byId(identity(res).id)!;
-    const event = persist({id: randomUUID(), type: 'exercise_completed', patientId: user.id, patientName: user.name, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, source: b.source as 'manual' | 'camera', transport: b.source === 'camera' ? 'camera' : 'app', deviceId: b.source === 'camera' ? 'movecompass-camera' : 'movecompass-patient-app', completedAt: b.completedAt ? new Date(b.completedAt as string).toISOString() : new Date().toISOString(), angles: (b.angles ?? {}) as Record<string, number>}, typeof b.clientId === 'string' ? {owner:`user:${user.id}`,key:b.clientId}:undefined);
+    const event = persist({id: randomUUID(), type: 'exercise_completed', patientId: user.id, patientName: user.name, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, source: b.source as 'manual' | 'camera', transport: b.source === 'camera' ? 'camera' : 'app', deviceId: b.source === 'camera' ? 'movecompass-camera' : 'movecompass-patient-app', completedAt: b.completedAt ? new Date(b.completedAt as string).toISOString() : new Date().toISOString(), angles: (b.angles ?? {}) as Record<string, number>}, typeof b.clientId === 'string' ? {owner:`user:${user.id}`,key:b.clientId,generatedTime:b.completedAt===undefined}:undefined);
     res.status(201).json({event});
   });
   app.post('/api/esp32/notify', (req, res) => {
@@ -309,7 +314,8 @@ export function createBackend(options: Options = {}) {
     const device = deviceById(b.deviceId as string);
     if ((device && !keyMatches(req.get('X-Device-Key'), device.key_hash)) || (!device && !allowLegacy)) { res.status(401).json({error: 'Invalid device credentials'}); return; }
     const owner = device ? byId(device.patient_id) : undefined;
-    const event = persist({id: randomUUID(), type: 'exercise_completed', deviceId: b.deviceId as string, patientId: owner?.id ?? null, patientName: owner?.name ?? b.patientName as string, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, completedAt: b.completedAt as string, transport: b.transport as CompletionEvent['transport'], source: 'device', angles: {}},typeof submissionKey==='string'?{owner:`device:${b.deviceId}`,key:submissionKey}:undefined);
+    const key=typeof submissionKey==='string'?submissionKey:'derived:'+createHash('sha256').update(JSON.stringify([b.deviceId,b.exerciseId,b.reps,new Date(b.completedAt as string).toISOString()])).digest('hex');
+    const event = persist({id: randomUUID(), type: 'exercise_completed', deviceId: b.deviceId as string, patientId: owner?.id ?? null, patientName: owner?.name ?? b.patientName as string, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, completedAt: b.completedAt as string, transport: b.transport as CompletionEvent['transport'], source: 'device', angles: {}},{owner:`device:${b.deviceId}`,key});
     if (device) touch(device.id);
     res.status(202).json({event});
   });
@@ -359,6 +365,7 @@ export function createBackend(options: Options = {}) {
     db.prepare('DELETE FROM push_tokens WHERE token = ?').run(req.body.token);
     res.json({ok: true});
   });
+  const buttonRetries=new Map<string,{key:string;expires:number}>();
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const user = verify(url.searchParams.get('token') ?? '');
@@ -391,11 +398,15 @@ export function createBackend(options: Options = {}) {
           if(object(b)&&b.kind==='ack'&&client.ack){
             if(b.seq===client.pending){client.cursor=Number(b.seq);client.pending=undefined;pumpDevice(ws,client);}return;
           }
-          if (!object(b) || b.kind !== 'button' || (b.exerciseId !== undefined && !text(b.exerciseId)) || (b.reps !== undefined && !repsValid(b.reps))) throw new Error('Invalid button payload');
+          if (!object(b) || b.kind !== 'button' || (b.exerciseId !== undefined && !text(b.exerciseId)) || (b.reps !== undefined && !repsValid(b.reps)) || (b.id!==undefined&&!text(b.id)) || (b.messageId!==undefined&&!text(b.messageId))) throw new Error('Invalid button payload');
           const exercise = getExercise(b.exerciseId as string ?? 'sit-to-stand');
           const owner = byId(client.device.patient_id)!; touch(client.device.id);
-          persist({id: randomUUID(), type: 'exercise_completed', patientId: owner.id, patientName: owner.name, deviceId: client.device.id, exerciseId: exercise.id, exerciseName: exercise.name, reps: b.reps as number ?? exercise.reps, completedAt: new Date().toISOString(), transport: 'wifi', source: 'device', angles: {}});
-        } catch { send(ws, {kind: 'error', error: 'Invalid button payload or exerciseId'}); }
+          const now=Date.now(),reps=b.reps as number??exercise.reps,fingerprint=JSON.stringify([client.device.id,exercise.id,reps]);
+          for(const [key,value]of buttonRetries)if(value.expires<=now)buttonRetries.delete(key);
+          const explicit=b.messageId??b.id,key=typeof explicit==='string'?'button:'+explicit:buttonRetries.get(fingerprint)?.key??'button:'+randomUUID();
+          if(explicit===undefined)buttonRetries.set(fingerprint,{key,expires:now+2000});
+          persist({id: randomUUID(), type: 'exercise_completed', patientId: owner.id, patientName: owner.name, deviceId: client.device.id, exerciseId: exercise.id, exerciseName: exercise.name, reps, completedAt: new Date().toISOString(), transport: 'wifi', source: 'device', angles: {}},{owner:`device:${client.device.id}`,key,generatedTime:true});
+        } catch(error) { send(ws, {kind: 'error',status:error instanceof CompletionConflict?409:400,error:error instanceof CompletionConflict?error.message:'Invalid button payload or exerciseId'}); }
       });
       if(!client.waiting){if(client.device&&client.ack)pumpDevice(ws,client);else if(since!==undefined){client.replaying=true;pumpReplay(ws,client);}else send(ws,{kind:'ready',seq:latestSeq()});}
     });
