@@ -13,7 +13,7 @@ import { getExercise, exercises } from '../../packages/pose/src/exercises';
 
 type Role = 'patient' | 'staff';
 interface User { id: string; email: string; name: string; role: Role; password_hash: string }
-interface Identity { id: string; role: Role; exp: number }
+interface Identity { id: string; role: Role; exp: number; jti: string }
 interface Device { id: string; name: string; patient_id: string; key_hash: string; last_seen: string | null }
 export interface CompletionEvent {
   id: string; type: 'exercise_completed'; patientId: string | null; patientName: string;
@@ -62,6 +62,7 @@ export function createBackend(options: Options = {}) {
     CREATE INDEX IF NOT EXISTS events_patient ON events(patient_id, id);
     CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, patient_id TEXT NOT NULL REFERENCES users(id), key_hash TEXT NOT NULL, last_seen TEXT);
     CREATE TABLE IF NOT EXISTS push_tokens (token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), role TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS revoked_tokens (jti TEXT PRIMARY KEY, expires INTEGER NOT NULL);
   `);
   const byEmail = (value: string) => db.prepare('SELECT * FROM users WHERE email = ?').get(value.toLowerCase()) as User | undefined;
   const byId = (value: string) => db.prepare('SELECT * FROM users WHERE id = ?').get(value) as User | undefined;
@@ -77,14 +78,14 @@ export function createBackend(options: Options = {}) {
     }
   }
   const deviceById = (id: string) => db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as Device | undefined;
-  const tokenFor = (u: User, role: Role) => jwt.sign({role}, secret, {subject: u.id, expiresIn: '7d', issuer: 'movecompass', audience: 'movecompass-app'});
+  const tokenFor = (u: User, role: Role) => jwt.sign({role}, secret, {subject: u.id, jwtid: randomUUID(), expiresIn: '7d', issuer: 'movecompass', audience: 'movecompass-app'});
   const verify = (token: string): Identity | null => {
     try {
       const p = jwt.verify(token, secret, {algorithms: ['HS256'], issuer: 'movecompass', audience: 'movecompass-app'});
-      if (typeof p === 'string' || !p.sub || !p.exp || !['patient', 'staff'].includes(p.role)) return null;
+      if (typeof p === 'string' || !p.sub || !p.exp || typeof p.jti !== 'string' || !['patient', 'staff'].includes(p.role) || db.prepare('SELECT 1 FROM revoked_tokens WHERE jti = ?').get(p.jti)) return null;
       const user = byId(p.sub);
       if (!user || p.role !== user.role) return null;
-      return { id: p.sub, role: p.role, exp: p.exp };
+      return { id: p.sub, role: p.role, exp: p.exp, jti: p.jti };
     } catch { return null; }
   };
   const app = express(); app.disable('x-powered-by'); app.use(cors()); app.use(express.json({limit: '32kb'}));
@@ -161,6 +162,13 @@ export function createBackend(options: Options = {}) {
     const role = b.role as Role; res.json({token: tokenFor(user, role), user: publicUser(user, role)});
   });
   app.get('/api/me', auth, (_req, res) => { const u = identity(res); res.json({user: publicUser(byId(u.id)!, u.role)}); });
+  app.post('/api/auth/logout', auth, (_req, res) => {
+    const u = identity(res);
+    db.prepare('DELETE FROM revoked_tokens WHERE expires < ?').run(Math.floor(Date.now()/1000));
+    db.prepare('INSERT OR IGNORE INTO revoked_tokens VALUES (?, ?)').run(u.jti, u.exp);
+    for (const [ws, client] of clients) if (client.user?.jti === u.jti) ws.close(1008, 'Signed out');
+    res.json({ok: true});
+  });
   app.post('/api/completions', auth, (req, res) => {
     const b = req.body; const errors: string[] = [];
     if (!object(b)) { res.status(400).json({errors: ['JSON object required']}); return; }

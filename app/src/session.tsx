@@ -179,7 +179,7 @@ function useSessionState() {
     setError("");
   }
   async function logout() {
-    try { await unregisterNotifications(base, token); }
+    try { await unregisterNotifications(base, token); await api(base, "/api/auth/logout", token, {}); }
     catch { setError("Can't sign out safely while offline. Please reconnect and try again."); return false; }
     await AsyncStorage.removeItem("mc-token");
     setToken("");

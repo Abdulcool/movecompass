@@ -42,6 +42,12 @@ beforeEach(async () => {
 afterEach(async()=>{for(const s of sockets)s.terminate();await backend.close();rmSync(dir,{recursive:true,force:true});});
 
 describe('auth and isolation',()=>{
+  it('revokes the signed-out JWT while other sessions remain valid',async()=>{
+    const first=await login(),second=await login();
+    await request(backend.app).post('/api/auth/logout').auth(first,{type:'bearer'}).send({}).expect(200);
+    await request(backend.app).get('/api/me').auth(first,{type:'bearer'}).expect(401);
+    await request(backend.app).get('/api/me').auth(second,{type:'bearer'}).expect(200);
+  });
   it('keeps patient and staff roles separate, protects me and hashes passwords',async()=>{
     expect((await request(backend.app).get('/api/me')).status).toBe(401);
     for(const [role,email] of [['patient','janedoe@gmail.com'],['staff','staff@cccare.ca']]) {
