@@ -5,6 +5,7 @@ import { exercises } from "@movecompass/pose";
 import { useSession } from "../../src/session";
 import { Button, Card, Copy, Page, Title, s } from "../../src/ui";
 import { ExerciseCard } from "../../src/ExerciseCard";
+import {remainingExercises} from '../../src/daily-plan';
 export default function Home() {
   const { user, dailySets } = useSession();
   const daily = exercises.filter((e) =>
@@ -30,7 +31,7 @@ export default function Home() {
       </Card>
       <Text style={s.heading}>{count===daily.length?'All done for today':'Your next safe step'}</Text>
       {count===daily.length && <Copy>You’ve completed all your planned sets. Rest, recover and follow your care team’s advice.</Copy>}
-      {daily.map((e) => (
+      {remainingExercises(daily,dailySets).map((e) => (
         <ExerciseCard key={e.id} exercise={e} />
       ))}
       <Copy>
