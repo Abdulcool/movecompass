@@ -1,5 +1,5 @@
 import type { Tracking } from './exercises';
-export interface Rep { min: number; max: number; rom: number; durationMs: number; quality: 'good' | 'partial'; feedback: string }
+export interface Rep { min: number; max: number; rom: number; durationMs: number; quality: 'good' | 'form-note' | 'partial'; feedback: string }
 export class RepCounter {
   reps = 0;
   phase: 'ready' | 'moving' | 'returning' = 'ready';
@@ -58,10 +58,10 @@ export class RepCounter {
   private sample(metric: number, form: string) { this.min = Math.min(this.min, metric); this.max = Math.max(this.max, metric); if (form) this.form = form; }
   private finish(time: number) {
     const durationMs = time - this.start!;
-    const good = this.reached && durationMs >= this.config.minRepMs && !this.form;
-    const feedback = this.form || (!this.reached ? 'Partial rep: use your comfortable full range' : durationMs < this.config.minRepMs ? 'Slow down for a controlled repetition' : 'Good repetition');
-    this.lastRep = {min: this.min, max: this.max, rom: this.max - this.min, durationMs, quality: good ? 'good' : 'partial', feedback};
-    if (good) this.reps++;
+    const complete = this.reached && durationMs >= this.config.minRepMs;
+    const feedback = !this.reached ? 'Partial rep: use your comfortable full range' : durationMs < this.config.minRepMs ? 'Slow down for a controlled repetition' : this.form || 'Good repetition';
+    this.lastRep = {min: this.min, max: this.max, rom: this.max - this.min, durationMs, quality: complete ? this.form ? 'form-note' : 'good' : 'partial', feedback};
+    if (complete) this.reps++;
     this.start = undefined; this.phase = 'ready';
   }
 }

@@ -126,11 +126,31 @@ describe.each(exercises)('$id repetitions', exercise => {
     expect(c.lastRep?.quality).toBe('partial');
   });
 });
-it('flags partial range and form faults without counting them', () => {
+it('rejects partial range but counts complete repetitions with form notes', () => {
   const c=run(new RepCounter(getExercise('seated-row').tracking),[170,140,120,120,120,120,120,120,120,140,170]);
   expect(c.lastRep?.quality).toBe('partial'); expect(c.reps).toBe(0);
   const bad=run(new RepCounter(getExercise('sit-to-stand').tracking),cycles['sit-to-stand'],0,'Keep chest up');
-  expect(bad.reps).toBe(0); expect(bad.lastRep?.feedback).toBe('Keep chest up');
+  expect(bad.reps).toBe(1); expect(bad.lastRep?.quality).toBe('form-note'); expect(bad.lastRep?.feedback).toBe('Keep chest up');
+});
+it('counts a 25 degree asymmetric arm raise with a directional form note', () => {
+  const cfg = getExercise('wall-angels').tracking, counter = new RepCounter(cfg);
+  [80, 95, 115, 140, 165, 170, 165, 150, 125, 100, 80].forEach((right, i) => {
+    const a = {...blankAngles(), leftShoulder: right - 25, rightShoulder: right, leftElbow: 100, rightElbow: 100};
+    counter.update(cfg.metric(a, [], 1, 1), i * 100, cfg.formChecks.find(check => check.test(a))?.message);
+  });
+  expect(counter.reps).toBe(1);
+  expect(counter.lastRep?.quality).toBe('form-note');
+  expect(counter.lastRep?.feedback).toBe('Left arm lower than right — try to lift evenly');
+});
+it('retains partial-ROM and tracking-loss rejection even when form notes are present', () => {
+  const cfg = getExercise('wall-angels').tracking;
+  const partial = run(new RepCounter(cfg), [70, 95, 110, 120, 120, 120, 110, 100, 85, 75, 70], 0, 'Open your elbows');
+  expect(partial.reps).toBe(0); expect(partial.lastRep?.quality).toBe('partial');
+  const lost = new RepCounter(cfg);
+  run(lost, [70, 110, 160], 0, 'Open your elbows');
+  lost.update(null, 900);
+  lost.update(70, 1100, 'Open your elbows');
+  expect(lost.reps).toBe(0);
 });
 it('ignores duplicate and out-of-order timestamps', () => {
   const c=run(new RepCounter(getExercise('seated-row').tracking), cycles['seated-row']);
@@ -147,12 +167,14 @@ describe('exercise metrics and copy', () => {
     }
     expect(()=>getExercise('missing')).toThrow('Unknown exercise');
   });
-  it('requires both wall angel arms, checks symmetry and uses available unilateral joints', () => {
+  it('uses a visible arm, averages even arms and notes symmetry without requiring it', () => {
     const a=blankAngles(); a.leftShoulder=160;
-    expect(getExercise('wall-angels').tracking.metric(a,[],1,1)).toBeNull();
+    expect(getExercise('wall-angels').tracking.metric(a,[],1,1)).toBe(160);
     a.rightShoulder=130;
-    expect(getExercise('wall-angels').tracking.metric(a,[],1,1)).toBe(130);
-    expect(getExercise('wall-angels').tracking.formChecks[1].test(a)).toBe(true);
+    expect(getExercise('wall-angels').tracking.metric(a,[],1,1)).toBe(160);
+    expect(getExercise('wall-angels').tracking.formChecks.some(check => check.test(a))).toBe(true);
+    a.rightShoulder=150;
+    expect(getExercise('wall-angels').tracking.metric(a,[],1,1)).toBe(155);
     a.rightKnee=170;
     expect(getExercise('sit-to-stand').tracking.metric(a,[],1,1)).toBe(170);
   });

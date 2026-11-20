@@ -15,8 +15,13 @@ timestamps in milliseconds and image dimensions. World-space angles are preferre
 image fallback corrects aspect ratio. Missing visibility or invalid joints produce
 null. Mirror only the selfie overlay, not the input coordinates.
 
-Only full-range, sufficiently slow, form-correct cycles increment reps. Incomplete
-returns and too-fast cycles produce a partial `lastRep` with metric ROM and feedback.
+Full-range, sufficiently slow cycles increment reps even when form needs attention.
+Form warnings produce a counted `lastRep` with quality `form-note` and coaching
+feedback. Incomplete returns and too-fast cycles produce an uncounted `partial`
+rep; the minimum duration is retained as an anti-jitter debounce. Wall angels use
+the better-tracked arm when confidence differs materially, otherwise averaging
+even arms or using the higher lift when uneven. The 20° symmetry threshold is a
+directional form note, never a completion veto.
 Pendulums count one amplitude-qualified side-to-side swing using the left arm;
 hip shifts count excursion-to-center on either side. Sit-to-stand counts on returning
 to standing (starting seated is supported). Calf raises require one second of still

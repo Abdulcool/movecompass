@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { router } from "expo-router";
 import { useSession } from "../../src/session";
 import { enableNotifications } from "../../src/notifications";
@@ -32,6 +32,19 @@ export default function Profile() {
           secondary
           onPress={() => void session.refresh()}
         />
+      </Card>
+      <Card>
+        <Text style={s.heading}>Recent activity</Text>
+        {session.events.slice(0, 5).map((event) => (
+          <View key={event.id}>
+            <Text style={s.heading}>{event.exerciseName}</Text>
+            <Copy>
+              {event.reps} reps · {event.source === "camera" ? "Camera guided" : event.source === "manual" ? "Manual" : "Device"}
+              {" · "}{new Date(event.completedAt).toLocaleString()}
+            </Copy>
+          </View>
+        ))}
+        {!session.events.length && <Copy>No completed activities yet.</Copy>}
       </Card>
       <Card>
         <Text style={s.heading}>Stay connected</Text>

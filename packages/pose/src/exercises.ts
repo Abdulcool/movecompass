@@ -14,6 +14,11 @@ export interface Exercise {
   safety: string; target: string; gif: string; angleGuide: {label: string; target: string}[]; tracking: Tracking;
 }
 const best = (a: number | null, b: number | null, left = 0, right = 0) => a === null ? b : b === null ? a : right > left ? b : a;
+const armLift = (a: Angles, c?: Confidence) => {
+  const left = a.leftShoulder, right = a.rightShoulder;
+  if (left === null || right === null || Math.abs((c?.leftShoulder ?? 0) - (c?.rightShoulder ?? 0)) > .15) return best(left, right, c?.leftShoulder, c?.rightShoulder);
+  return Math.abs(left - right) > 20 ? Math.max(left, right) : (left + right) / 2;
+};
 const ratio = (p: Landmark[], ids: number[], compute: () => [number, number]) => {
   if (!ids.every(i => visible(p[i]))) return null;
   const [n, d] = compute(); return d > 1e-8 && Number.isFinite(n / d) ? n / d : null;
@@ -26,9 +31,10 @@ export const exercises: Exercise[] = [
     steps: ['Stand with your back near a wall and feet hip-width apart.', 'Keep your ribs relaxed as your arms make a slow ‘W’ shape.', 'Slide your hands upward only as far as feels comfortable, then return.'],
     safety: 'Keep your neck relaxed. Stop if you feel sharp pain, dizziness, or tingling.', target: 'Upper back + chest', gif: 'wall-angels.gif',
     angleGuide: [{label: 'Arm lift', target: 'Above 150°, return below 90°'}, {label: 'Elbows', target: 'Keep above 70°'}],
-    tracking: { side: 'both', metric: a => a.leftShoulder === null || a.rightShoulder === null ? null : Math.min(a.leftShoulder, a.rightShoulder), enterAbove: 150, exitBelow: 90, minRepMs: 800, targetRangeLabel: 'Raise both arms, then lower slowly', formChecks: [
+    tracking: { side: 'both', metric: (a, _p, _w, _h, c) => armLift(a, c), enterAbove: 150, exitBelow: 90, minRepMs: 800, targetRangeLabel: 'Raise both arms, then lower slowly', formChecks: [
       {test: a => [a.leftElbow, a.rightElbow].some(v => v !== null && v <= 70), message: 'Open your elbows'},
-      {test: a => a.leftShoulder !== null && a.rightShoulder !== null && Math.abs(a.leftShoulder - a.rightShoulder) > 20, message: 'Move both arms evenly'},
+      {test: a => a.leftShoulder !== null && a.rightShoulder !== null && a.rightShoulder - a.leftShoulder > 20, message: 'Left arm lower than right — try to lift evenly'},
+      {test: a => a.leftShoulder !== null && a.rightShoulder !== null && a.leftShoulder - a.rightShoulder > 20, message: 'Right arm lower than left — try to lift evenly'},
     ] },
   },
   {
