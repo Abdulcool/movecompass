@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
+import { randomUUID } from 'expo-crypto';
 import { Text } from "react-native";
 import { Image } from "expo-image";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
@@ -10,6 +11,7 @@ export default function Detail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const exercise = exercises.find((e) => e.id === id);
   const session = useSession();
+  const clientId=useRef(randomUUID());
   const [status, setStatus] = useState(""),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false);
@@ -34,9 +36,9 @@ export default function Detail() {
   async function complete() {
     setBusy(true);
     try {
-      await session.complete(e, e.reps, "manual");
+      const result=await session.complete(e, e.reps, "manual",{},clientId.current);
       setSaved(true);
-      setStatus("Activity saved. Your care team has been notified.");
+      setStatus('queued' in result ? 'Saved on this device — will sync when back online' : "Activity saved. Your care team has been notified.");
     } catch (error) {
       setStatus((error as Error).message);
     } finally {

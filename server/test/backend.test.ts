@@ -78,6 +78,13 @@ describe('auth and isolation',()=>{
   });
 });
 describe('completion contract and storage',()=>{
+  it('deduplicates app retries with a durable patient-scoped client UUID',async()=>{
+    const token=await login();const data={...completion,clientId:'c7315c2c-9588-4ce7-a216-bb884732122a'};
+    const first=await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send(data);
+    const second=await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send(data);
+    expect(second.body.event.id).toBe(first.body.event.id);
+    expect((await request(backend.app).get('/api/events').auth(token,{type:'bearer'})).body.total).toBe(1);
+  });
   it('returns uncapped patient-scoped history counts',async()=>{
     const token=await login();const me=await request(backend.app).get('/api/me').auth(token,{type:'bearer'});
     for(let i=0;i<205;i++)backend.db.prepare('INSERT INTO events(patient_id,payload) VALUES (?,?)').run(me.body.user.id,JSON.stringify({...completion,id:String(i),completedAt:new Date().toISOString()}));

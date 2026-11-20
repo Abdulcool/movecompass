@@ -39,15 +39,17 @@ export async function api<T>(
   method = body === undefined ? "GET" : "POST",
 ): Promise<T> {
   if (!base) throw new Error("Set your backend URL in settings first.");
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
   let response: Response;
   try { response = await fetch(base + path, {
     method,
+    signal: controller.signal,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  }); } catch { throw new ApiError("Can't reach MoveCompass — retrying.", 0); }
+  }); } catch { throw new ApiError("Can't reach MoveCompass — retrying.", 0); } finally { clearTimeout(timeout); }
   const data = await response.json().catch(() => ({}));
   if (response.status === 413) throw new ApiError("Request too large", 413);
   if (!response.ok)

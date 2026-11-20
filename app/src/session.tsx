@@ -7,6 +7,8 @@ import React, {
   useRef,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { randomUUID } from 'expo-crypto';
+import { enqueueSet, flushSets, outboxKey } from './outbox';
 import { Pressable, Text, View } from "react-native";
 import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
 import { notify, unregisterNotifications } from "./notifications";
@@ -67,6 +69,8 @@ function useSessionState() {
     [events, setEvents] = useState<Event[]>([]),
     [total, setTotal] = useState(0),
     [weeklyTotal, setWeeklyTotal] = useState(0),
+    [queuedCount, setQueuedCount] = useState(0),
+    [offline, setOffline] = useState(false),
     [devices, setDevices] = useState<Device[]>([]),
     [toast, setToast] = useState(""),
     [error, setError] = useState("");
@@ -84,6 +88,8 @@ function useSessionState() {
         setSetting(url || "");
         setToken(stored || "");
         if (stored) {
+          const cached=await AsyncStorage.getItem('mc-user');
+          if(cached && active){try{setUser(JSON.parse(cached));setReady(true);}catch{}}
           const data = await api<{ user: User }>(
             baseUrl(url || ""),
             "/api/me",
@@ -92,15 +98,17 @@ function useSessionState() {
           if (active) {
             setUser(data.user);
             setToken(stored);
+            await AsyncStorage.setItem('mc-user',JSON.stringify(data.user));
           }
         }
         if (active) { setReady(true); setError(""); }
       } catch (e) {
         if (!active) return;
         if (e instanceof ApiError && e.status === 401) {
-          await AsyncStorage.removeItem("mc-token");setToken("");setUser(null);setReady(true);
+          await AsyncStorage.multiRemove(["mc-token","mc-user"]);setToken("");setUser(null);setReady(true);
         } else {
           setError("Can't reach MoveCompass — retrying.");timer=setTimeout(restore,5000);
+          setOffline(true);
         }
       }
     }
@@ -126,13 +134,30 @@ function useSessionState() {
             .devices,
         );
       setError("");
+      setOffline(false);
     } catch (e) {
       setError((e as Error).message);
+      if(e instanceof ApiError && (e.status===0 || e.status>=500))setOffline(true);
     }
   }, [base, token, user?.role]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  const syncQueued=useCallback(async()=>{
+    if(!user || !token)return;
+    try {
+      const result=await flushSets(outboxKey(base,user.id),item=>api<{event:Event}>(base,'/api/completions',token,item));
+      setQueuedCount(result.pending);
+      if(result.sent.length){setEvents(es=>[...result.sent,...es.filter(e=>!result.sent.some(s=>s.id===e.id))]);void refresh();}
+      if(result.error){setOffline(result.error.status===0 || result.error.status>=500);setError(result.error.message);}
+    }catch {setError("This device couldn't read your saved sets. Please contact your care team before clearing app data.");}
+  },[base,token,user?.id,refresh]);
+  useEffect(()=>{
+    void syncQueued();const timer=setInterval(()=>void syncQueued(),15000);
+    const online=()=>{void syncQueued();void refresh();};
+    if(typeof window!=='undefined')window.addEventListener('online',online);
+    return()=>{clearInterval(timer);if(typeof window!=='undefined')window.removeEventListener('online',online);};
+  },[syncQueued,refresh]);
   const connected = useLive(
     base,
     token,
@@ -164,6 +189,7 @@ function useSessionState() {
     },
     () => {
       void refresh();
+      void syncQueued();
     },
   );
   async function authenticate(
@@ -179,6 +205,7 @@ function useSessionState() {
       { email, password, role, ...(name ? { name } : {}) },
     );
     await AsyncStorage.setItem("mc-token", result.token);
+    await AsyncStorage.setItem('mc-user',JSON.stringify(result.user));
     setUser(result.user);
     setToken(result.token);
     setEvents([]);
@@ -189,13 +216,14 @@ function useSessionState() {
   async function logout() {
     try { await unregisterNotifications(base, token); await api(base, "/api/auth/logout", token, {}); }
     catch { setError("Can't sign out safely while offline. Please reconnect and try again."); return false; }
-    await AsyncStorage.removeItem("mc-token");
+    await AsyncStorage.multiRemove(["mc-token","mc-user"]);
     setToken("");
     setUser(null);
     setTotal(0); setWeeklyTotal(0);
     setEvents([]);
     setDevices([]);
     setToast("");
+    setQueuedCount(0);
     return true;
   }
   async function saveBackend(url: string) {
@@ -210,21 +238,25 @@ function useSessionState() {
     reps: number,
     source: "manual" | "camera",
     angles: Record<string, number> = {},
+    clientId = randomUUID(),
   ) {
-    const { event } = await api<{ event: Event }>(
-      base,
-      "/api/completions",
-      token,
-      {
+    if(!user)throw new Error('Please sign in to save this set.');
+    const key=outboxKey(base,user.id);
+    await enqueueSet(key,{
+        clientId,
         exerciseId: exercise.id,
         exerciseName: exercise.name,
         reps,
         source,
         angles,
-      },
-    );
+        completedAt:new Date().toISOString(),
+    });
+    const result=await flushSets(key,item=>api<{event:Event}>(base,'/api/completions',token,item));
+    setQueuedCount(result.pending);
+    const event=result.sent.find(e=>e.exerciseId===exercise.id);
+    if(!event){setOffline(!result.error || result.error.status===0 || result.error.status>=500);return {queued:true as const};}
     setEvents((es) => [event, ...es.filter((e) => e.id !== event.id)]);
-    await refresh();
+    void refresh();
     return event;
   }
   return {
@@ -236,6 +268,8 @@ function useSessionState() {
     events,
     total,
     weeklyTotal,
+    offline,
+    queuedCount,
     devices,
     error,
     toast,
@@ -251,10 +285,11 @@ function useSessionState() {
 const Context = createContext<ReturnType<typeof useSessionState> | null>(null);
 export function SessionProvider({ children }: React.PropsWithChildren) {
   const state = useSessionState();
+  useEffect(()=>{if(typeof navigator!=='undefined' && 'serviceWorker' in navigator)void navigator.serviceWorker.register('/sw.js').catch(()=>{});},[]);
   return (
     <Context.Provider value={state}>
       {children}
-      {!state.ready && !!state.error && <View accessibilityRole="alert" style={{position:"absolute",top:8,left:16,right:16,padding:12,backgroundColor:colors.cream,zIndex:101}}><Text>{state.error}</Text></View>}
+      {((!state.ready && !!state.error)||state.offline||state.queuedCount>0) && <View accessibilityRole="alert" style={{position:"absolute",bottom:80,left:16,right:16,padding:12,backgroundColor:colors.paper,zIndex:101}}><Text>{!state.ready ? state.error : state.queuedCount>0 ? 'Saved on this device — will sync when back online' : 'Offline — reconnecting to your care team.'}</Text></View>}
       {!!state.toast && (
         <Pressable
           accessibilityRole="alert"

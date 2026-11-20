@@ -63,6 +63,7 @@ export function createBackend(options: Options = {}) {
     CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, patient_id TEXT NOT NULL REFERENCES users(id), key_hash TEXT NOT NULL, last_seen TEXT);
     CREATE TABLE IF NOT EXISTS push_tokens (token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), role TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS revoked_tokens (jti TEXT PRIMARY KEY, expires INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS submission_keys (owner TEXT NOT NULL, key TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(owner, key));
   `);
   const byEmail = (value: string) => db.prepare('SELECT * FROM users WHERE email = ?').get(value.toLowerCase()) as User | undefined;
   const byId = (value: string) => db.prepare('SELECT * FROM users WHERE id = ?').get(value) as User | undefined;
@@ -129,8 +130,15 @@ export function createBackend(options: Options = {}) {
     }
   };
   const pendingPush = new Set<Promise<void>>();
-  const persist = (event: CompletionEvent) => {
-    db.prepare('INSERT INTO events(patient_id, payload) VALUES (?, ?)').run(event.patientId, JSON.stringify(event));
+  const persist = (event: CompletionEvent, submission?: {owner: string; key: string}) => {
+    if (submission) {
+      const previous=db.prepare('SELECT payload FROM submission_keys WHERE owner = ? AND key = ?').get(submission.owner,submission.key) as {payload:string}|undefined;
+      if(previous)return JSON.parse(previous.payload) as CompletionEvent;
+    }
+    db.transaction(()=>{
+      db.prepare('INSERT INTO events(patient_id, payload) VALUES (?, ?)').run(event.patientId, JSON.stringify(event));
+      if(submission)db.prepare('INSERT INTO submission_keys VALUES (?, ?, ?)').run(submission.owner,submission.key,JSON.stringify(event));
+    })();
     broadcast({kind: 'event', event}, event.patientId);
     const tokens = db.prepare("SELECT token FROM push_tokens WHERE role = 'staff'").all() as {token: string}[];
     if (tokens.length) {
@@ -176,10 +184,12 @@ export function createBackend(options: Options = {}) {
     if (!knownExercise(b.exerciseId)) errors.push('Choose an exercise from your plan');
     if (!repsValid(b.reps)) errors.push('Reps must be a whole number from 1 to 100');
     if (typeof b.source !== 'string' || !['manual', 'camera'].includes(b.source)) errors.push('source must be manual or camera');
+    if (b.clientId !== undefined && (typeof b.clientId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(b.clientId))) errors.push('A valid set identifier is required');
+    if (b.completedAt !== undefined && (typeof b.completedAt !== 'string' || !Number.isFinite(Date.parse(b.completedAt)) || Date.parse(b.completedAt)>Date.now()+300000))errors.push('Check the completion date and device clock');
     if (b.angles !== undefined && (!object(b.angles) || Object.entries(b.angles).some(([k, v]) => !text(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 360))) errors.push('angles must map joint names to finite ROM values from 0 to 360');
     if (errors.length) { res.status(400).json({errors}); return; }
     const user = byId(identity(res).id)!;
-    const event = persist({id: randomUUID(), type: 'exercise_completed', patientId: user.id, patientName: user.name, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, source: b.source as 'manual' | 'camera', transport: b.source === 'camera' ? 'camera' : 'app', deviceId: b.source === 'camera' ? 'movecompass-camera' : 'movecompass-patient-app', completedAt: new Date().toISOString(), angles: (b.angles ?? {}) as Record<string, number>});
+    const event = persist({id: randomUUID(), type: 'exercise_completed', patientId: user.id, patientName: user.name, exerciseId: b.exerciseId as string, exerciseName: knownExercise(b.exerciseId)!.name, reps: b.reps as number, source: b.source as 'manual' | 'camera', transport: b.source === 'camera' ? 'camera' : 'app', deviceId: b.source === 'camera' ? 'movecompass-camera' : 'movecompass-patient-app', completedAt: b.completedAt ? new Date(b.completedAt as string).toISOString() : new Date().toISOString(), angles: (b.angles ?? {}) as Record<string, number>}, typeof b.clientId === 'string' ? {owner:`user:${user.id}`,key:b.clientId}:undefined);
     res.status(201).json({event});
   });
   app.post('/api/esp32/notify', (req, res) => {

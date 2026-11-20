@@ -64,10 +64,10 @@ export default function Track() {
     saving.current = true;
     setBusy(true);
     try {
-      await session.complete(exercise, count, source, rom);
+      const result=await session.complete(exercise, count, source, rom,clientId.current);
       if(key)await removeDraft(key);
       setSaved(true);
-      setMessage("Session saved. Your care team has been notified.");
+      setMessage('queued' in result ? 'Saved on this device — will sync when back online' : "Session saved. Your care team has been notified.");
     } catch (error) {
       saving.current = false;
       setMessage((error as Error).message);
