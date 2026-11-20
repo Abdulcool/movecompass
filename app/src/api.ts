@@ -28,6 +28,9 @@ export function baseUrl(setting: string) {
     ? window.location.origin
     : (setting || process.env.EXPO_PUBLIC_API_URL || "").replace(/\/$/, "");
 }
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
 export async function api<T>(
   base: string,
   path: string,
@@ -36,16 +39,17 @@ export async function api<T>(
   method = body === undefined ? "GET" : "POST",
 ): Promise<T> {
   if (!base) throw new Error("Set your backend URL in settings first.");
-  const response = await fetch(base + path, {
+  let response: Response;
+  try { response = await fetch(base + path, {
     method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = await response.json();
+  }); } catch { throw new ApiError("Can't reach MoveCompass — retrying.", 0); }
+  const data = await response.json().catch(() => ({}));
   if (!response.ok)
-    throw new Error(data.errors?.join(". ") || data.error || "Request failed");
+    throw new ApiError(data.errors?.join(". ") || data.error || "Please try again in a moment.", response.status);
   return data;
 }

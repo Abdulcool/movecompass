@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pressable, Text, View } from "react-native";
-import { api, baseUrl, type User, type Event, type Device } from "./api";
+import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
 import { notify, unregisterNotifications } from "./notifications";
 import { colors } from "./ui";
 function useLive(
@@ -73,7 +73,8 @@ function useSessionState() {
   const base = baseUrl(setting);
   useEffect(() => {
     let active = true;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout>;
+    async function restore() {
       try {
         const [stored, url] = await Promise.all([
           AsyncStorage.getItem("mc-token"),
@@ -81,6 +82,7 @@ function useSessionState() {
         ]);
         if (!active) return;
         setSetting(url || "");
+        setToken(stored || "");
         if (stored) {
           const data = await api<{ user: User }>(
             baseUrl(url || ""),
@@ -92,14 +94,20 @@ function useSessionState() {
             setToken(stored);
           }
         }
+        if (active) { setReady(true); setError(""); }
       } catch (e) {
-        if (active) setError(String(e));
-      } finally {
-        if (active) setReady(true);
+        if (!active) return;
+        if (e instanceof ApiError && e.status === 401) {
+          await AsyncStorage.removeItem("mc-token");setToken("");setUser(null);setReady(true);
+        } else {
+          setError("Can't reach MoveCompass — retrying.");timer=setTimeout(restore,5000);
+        }
       }
-    })();
+    }
+    void restore();
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, []);
   const refresh = useCallback(async () => {
@@ -246,6 +254,7 @@ export function SessionProvider({ children }: React.PropsWithChildren) {
   return (
     <Context.Provider value={state}>
       {children}
+      {!state.ready && !!state.error && <View accessibilityRole="alert" style={{position:"absolute",top:8,left:16,right:16,padding:12,backgroundColor:colors.cream,zIndex:101}}><Text>{state.error}</Text></View>}
       {!!state.toast && (
         <Pressable
           accessibilityRole="alert"

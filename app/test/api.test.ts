@@ -57,7 +57,7 @@ describe("app API client", () => {
     await expect(api("", "/api/me")).rejects.toThrow("Set your backend URL");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     await expect(api("https://care.example", "/api/me")).rejects.toThrow(
-      "offline",
+      "Can't reach MoveCompass",
     );
   });
 });
