@@ -20,7 +20,7 @@ export default function Login() {
     );
   if (session.user)
     return (
-      <Redirect href={session.user.role === "staff" ? "/admin" : "/(tabs)"} />
+      <Redirect href={session.user.role === "staff" ? "/admin" : "/(tabs)/home"} />
     );
   async function submit() {
     setBusy(true);

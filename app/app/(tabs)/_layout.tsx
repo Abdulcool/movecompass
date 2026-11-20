@@ -23,7 +23,7 @@ export default function Layout() {
         tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>●</Text>,
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "Home" }} />
+      <Tabs.Screen name="home" options={{ title: "Home" }} />
       <Tabs.Screen name="plan" options={{ title: "Plan" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>

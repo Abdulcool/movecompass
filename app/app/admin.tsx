@@ -26,7 +26,7 @@ export default function Admin() {
       </Page>
     );
   if (!session.user) return <Redirect href="/" />;
-  if (session.user.role !== "staff") return <Redirect href="/(tabs)" />;
+  if (session.user.role !== "staff") return <Redirect href="/(tabs)/home" />;
   const patients = Array.from(
     new Set(session.events.filter((e) => e.patientId).map((e) => e.patientId)),
   ).map((id) => {
