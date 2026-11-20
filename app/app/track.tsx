@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Text } from "react-native";
 import { Image } from "expo-image";
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { exercises } from "@movecompass/pose";
 import { PoseTracker } from "../src/PoseTracker";
 import { gifs } from "../src/assets";
@@ -29,6 +29,7 @@ export default function Track() {
     return (
       <Page>
         <Title>Choose an exercise from your plan first.</Title>
+        <Button title="Back to Plan" onPress={()=>router.replace('/(tabs)/plan')} />
       </Page>
     );
   const exercise = e;

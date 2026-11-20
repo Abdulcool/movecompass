@@ -285,7 +285,7 @@ export function createBackend(options: Options = {}) {
   });
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const status = object(error) && typeof error.status === 'number' && error.status >= 400 && error.status < 500 ? error.status : 500;
-    res.status(status).json({errors: [status === 500 ? 'Internal server error' : 'Invalid JSON request']});
+    res.status(status).json({errors: [status === 413 ? 'Request too large' : status === 500 ? 'Internal server error' : 'Invalid JSON request']});
   });
   return {app, server, db, async close() {
     clearInterval(heartbeat);

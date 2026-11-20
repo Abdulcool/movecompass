@@ -49,6 +49,7 @@ export async function api<T>(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }); } catch { throw new ApiError("Can't reach MoveCompass — retrying.", 0); }
   const data = await response.json().catch(() => ({}));
+  if (response.status === 413) throw new ApiError("Request too large", 413);
   if (!response.ok)
     throw new ApiError(data.errors?.join(". ") || data.error || "Please try again in a moment.", response.status);
   return data;
