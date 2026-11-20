@@ -10,6 +10,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from 'expo-crypto';
 import { enqueueSet, flushSets, outboxKey,queuedSetCounts } from './outbox';
 import { AppState,Pressable,Text,View } from "react-native";
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
 import { notify } from "./notifications";
 import { clearSession } from './logout';
@@ -340,6 +341,7 @@ function useSessionState() {
 const Context = createContext<ReturnType<typeof useSessionState> | null>(null);
 export function SessionProvider({ children }: React.PropsWithChildren) {
   const state = useSessionState();
+  const insets=useSafeAreaInsets();
   useEffect(()=>{
     const retry=()=>{void retryPushUnregisters().catch(()=>{});};
     retry();const timer=setInterval(retry,15000);
@@ -357,7 +359,7 @@ export function SessionProvider({ children }: React.PropsWithChildren) {
           accessibilityRole="alert"
           style={{
             position: "absolute",
-            bottom: 92,
+            top: Math.max(insets.top,12)+52,
             right: 20,
             left: 20,
             alignSelf: "center",
