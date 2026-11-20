@@ -62,3 +62,7 @@ it('handles no queued subscriptions and does not duplicate remote push locally',
   mocks.storage.set('mc-push-registered','registered');await notify('completion');expect(local.scheduleNotificationAsync).not.toHaveBeenCalled();
   mocks.storage.clear();local.getPermissionsAsync.mockResolvedValue({granted:true});await notify('completion');expect(local.scheduleNotificationAsync).toHaveBeenCalledOnce();
 });
+it('coalesces foreground and timer retries instead of accumulating work while offline',async()=>{
+  const first=retryPushUnregisters(),second=retryPushUnregisters();expect(second).toBe(first);await first;
+  expect(retryPushUnregisters()).not.toBe(first);await retryPushUnregisters();
+});

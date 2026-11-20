@@ -5,6 +5,7 @@ export const pushStateKeys=['mc-push-token','mc-push-registered','mc-push-base']
 const prefix='mc-push-unregister:';
 const pendingKey=(base:string,token:string)=>prefix+encodeURIComponent(base)+':'+encodeURIComponent(token);
 let serial:Promise<unknown>=Promise.resolve();
+let retrying:Promise<void>|undefined;
 function exclusive<T>(work:()=>Promise<T>){const next=serial.catch(()=>{}).then(work);serial=next;return next;}
 
 async function removeSubscription(key:string,base:string,token:string){
@@ -22,7 +23,13 @@ async function retryPending(){
     }catch{}
   }
 }
-export function retryPushUnregisters(){return exclusive(retryPending);}
+export function retryPushUnregisters(){
+  if(!retrying){
+    const next=exclusive(retryPending);retrying=next;
+    void next.finally(()=>{if(retrying===next)retrying=undefined;}).catch(()=>{});
+  }
+  return retrying;
+}
 export function unregisterPushSubscription(base:string){
   return exclusive(async()=>{
     const token=await AsyncStorage.getItem('mc-push-token');
