@@ -87,6 +87,17 @@ export function createBackend(options: Options = {}) {
     } catch { return null; }
   };
   const app = express(); app.disable('x-powered-by'); app.use(cors()); app.use(express.json({limit: '32kb'}));
+  const attempts = new Map<string, {count: number; expires: number}>();
+  const throttle = (req: Request, res: Response, next: NextFunction) => {
+    const now = Date.now();
+    for (const [key, value] of attempts) if (value.expires <= now) attempts.delete(key);
+    const key = `${req.path}:${req.ip}`;
+    const bucket = attempts.get(key) ?? {count: 0, expires: now + 60000};
+    attempts.set(key, bucket);
+    if (++bucket.count > 10) { res.set('Retry-After', String(Math.ceil((bucket.expires - now) / 1000))).status(429).json({error: 'Too many attempts. Please wait a minute and try again.'}); return; }
+    next();
+  };
+  app.use(['/api/auth/login', '/api/auth/register', '/api/devices/pair'], throttle);
   const server = createServer(app);
   const wss = new WebSocketServer({noServer: true, maxPayload: 32768});
   const clients = new Map<WebSocket, {user?: Identity; device?: Device; alive: boolean}>();
@@ -134,6 +145,7 @@ export function createBackend(options: Options = {}) {
     if (!object(b) || !email(b.email) || !text(b.name) || typeof b.password !== 'string' || Buffer.byteLength(b.password) < 8 || Buffer.byteLength(b.password) > 72 || (b.role !== undefined && b.role !== 'patient')) {
       res.status(400).json({errors: ['Valid email, name, password (8–72 bytes), and patient role required']}); return;
     }
+    if (byEmail(b.email)) { res.status(409).json({error: 'Email already registered'}); return; }
     const passwordHash = await bcrypt.hash(b.password, 10);
     if (byEmail(b.email)) { res.status(409).json({error: 'Email already registered'}); return; }
     const user: User = {id: randomUUID(), email: b.email.toLowerCase(), name: b.name.trim(), role: 'patient', password_hash: passwordHash};
