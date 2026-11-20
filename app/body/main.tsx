@@ -7,10 +7,9 @@ function App() {
   useEffect(() => {
     const receive = (e: Event) => { const id = (e as CustomEvent).detail; if (id === "" || isRegion(id)) setValue(id); };
     window.addEventListener("body:selection", receive);
-    window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "ready" }));
     return () => window.removeEventListener("body:selection", receive);
   }, []);
-  return <BodyScene value={value} onChange={id => {
+  return <BodyScene value={value} onReady={()=>window.ReactNativeWebView?.postMessage(JSON.stringify({type:'ready'}))} onChange={id => {
     setValue(id);
     window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "region", id }));
   }} />;

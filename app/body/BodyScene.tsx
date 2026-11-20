@@ -6,11 +6,12 @@ import { Mesh, MeshPhysicalMaterial, Raycaster, Vector2, Vector3, type BufferGeo
 import { regionAt, regionNumber, regionShader, type BodyPickerProps } from "./regions";
 declare global { interface Window { __MOVE_BODY_TEST__?: { ready?: boolean; project?: (target: number[]) => { x: number; y: number; point: number[] }; camera?: () => { position: number[]; projection: number[]; world: number[] } } } }
 
-function Human({ value, onChange, onHover }: BodyPickerProps & { onHover: (id: string) => void }) {
+function Human({ value, onChange, onHover, onReady }: BodyPickerProps & { onHover: (id: string) => void; onReady:()=>void }) {
   const gltf = useLoader(GLTFLoader, "/body/human.glb");
   const [hover, setHover] = useState("");
   const mesh = useRef<Mesh>(null), get = useThree(s => s.get);
   useEffect(() => {
+    onReady();
     const hook = window.__MOVE_BODY_TEST__;
     if (!hook) return;
     hook.ready = true;
@@ -99,19 +100,23 @@ class SceneBoundary extends Component<React.PropsWithChildren, { failed: boolean
   static getDerivedStateFromError() { return { failed: true }; }
   render() { return this.state.failed ? <p role="status">3D view unavailable. Choose a body area below.</p> : this.props.children; }
 }
-export function BodyScene(props: BodyPickerProps) {
-  const touched = useRef(false), [hover, setHover] = useState("");
+function Unavailable({done}:{done:()=>void}) {useEffect(done,[]);return <p>3D view unavailable. Choose a body area below.</p>;}
+export function BodyScene(props: BodyPickerProps & {onReady?:()=>void}) {
+  const touched = useRef(false), [hover, setHover] = useState(""),[loaded,setLoaded]=useState(false);
+  const ready=()=>{setLoaded(true);props.onReady?.();};
   return <SceneBoundary><div aria-label="Interactive 3D body. Drag to rotate; scroll or pinch to zoom. Use body area buttons below as an alternative."
     onPointerDown={() => { touched.current = true; }} onWheel={() => { touched.current = true; }}
-    style={{ height: 460, width: "100%", background: "#EEF0E9", borderRadius: 16, overflow: "hidden", cursor: hover ? "pointer" : "grab", touchAction: "none" }}>
+    style={{ position:'relative',height: 460, width: "100%", background: "#EEF0E9", borderRadius: 16, overflow: "hidden", cursor: hover ? "pointer" : "grab", touchAction: "none" }}>
+    <style>{'@keyframes movecompass-spin{to{transform:rotate(360deg)}}'}</style>
+    {!loaded && <div role="status" style={{position:'absolute',inset:0,zIndex:2,display:'flex',alignItems:'center',justifyContent:'center',gap:12,background:'#EEF0E9'}}><span aria-hidden="true" style={{width:24,height:24,border:'3px solid #AABBB0',borderTopColor:'#2D765A',borderRadius:'50%',animation:'movecompass-spin 1s linear infinite'}}/>Loading 3D body…</div>}
     <Canvas shadows camera={{ position: [0, 1.15, 3.6], fov: 38 }} dpr={[1, 1.75]}
-      gl={{ antialias: true }} fallback={<p>3D view unavailable. Choose a body area below.</p>}>
+      gl={{ antialias: true }} fallback={<Unavailable done={ready}/>}>
       <color attach="background" args={["#EEF0E9"]} />
       <hemisphereLight args={["#ffffff", "#8B9B85", 2.1]} />
       <directionalLight position={[3, 5, 4]} intensity={3} castShadow shadow-mapSize={[1024, 1024]} shadow-normalBias={.02}
         shadow-camera-left={-1.8} shadow-camera-right={1.8} shadow-camera-top={2.8} shadow-camera-bottom={-1} />
       <directionalLight position={[-3, 2, -3]} intensity={2} color="#DFECE4" />
-      <Suspense fallback={null}><Human {...props} onHover={setHover} /></Suspense>
+      <Suspense fallback={null}><Human {...props} onHover={setHover} onReady={ready} /></Suspense>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[200, 200]} /><shadowMaterial opacity={.16} /></mesh>
       <Controls touched={touched} />
     </Canvas>

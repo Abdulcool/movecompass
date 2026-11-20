@@ -18,11 +18,11 @@ export const colors = {
   coral: "#E78367",
   line: "#E4E9E4",
 };
-export function Page({ children }: React.PropsWithChildren) {
+export function Page({ children,scrollRef }: React.PropsWithChildren<{scrollRef?:React.RefObject<ScrollView|null>}>) {
   const focused = useIsFocused();
   if (!focused) return null;
   return (
-    <ScrollView style={s.page} contentContainerStyle={s.content}>
+    <ScrollView ref={scrollRef} style={s.page} contentContainerStyle={s.content}>
       {children}
     </ScrollView>
   );
