@@ -10,6 +10,7 @@ export type { PoseTrackerProps } from "./tracker-contract";
 export function PoseTracker({
   exerciseId,
   target,
+  active=true,
   initialReps=0,
   initialAngles={},
   onRep,
@@ -19,12 +20,15 @@ export function PoseTracker({
   const [permission, requestPermission] = useCameraPermissions();
   const [error, setError] = useState("");
   const [height,setHeight]=useState(790);
+  const frame=useRef<WebView<{}>>(null),loaded=useRef(false);
   const seed=useRef({reps:initialReps,angles:initialAngles}),latest=useRef(seed.current);
   useEffect(() => {
-    void requestPermission().catch((e) => setError(cameraGuidance(e)));
-  }, [requestPermission]);
-  if (!permission?.granted)
-    return (
+    if(active)void requestPermission().catch((e) => setError(cameraGuidance(e)));
+  }, [active,requestPermission]);
+  useEffect(()=>{if(active&&permission?.granted&&loaded.current)frame.current?.postMessage(JSON.stringify({type:'start'}));},[active,permission?.granted]);
+  if(error)return <Card><Copy>{error}</Copy><Button title="Try again" onPress={()=>{loaded.current=false;seed.current=latest.current;setError('');}}/></Card>;
+  return <>
+    {active&&!permission?.granted&&(
       <Card>
         <Copy>
           {error || "Camera access is off. Allow it in device settings, or complete this set manually."}
@@ -36,20 +40,19 @@ export function PoseTracker({
           }
         />
       </Card>
-    );
-  if(error)return <Card><Copy>{error}</Copy><Button title="Try again" onPress={()=>{seed.current=latest.current;setError('');}}/></Card>;
-  return (
-    <>
-      <WebView
-        style={{ height, backgroundColor: "#13231F" }}
+    )}
+      <WebView<{}>
+        ref={frame}
+        style={{ height:active&&permission?.granted?height:1,opacity:active&&permission?.granted?1:0, backgroundColor: "#13231F" }}
         injectedJavaScript={`document.documentElement.style.fontSize='${16*PixelRatio.getFontScale()}px';true;`}
         source={{
-          uri: `${base}/tracker.html?exercise=${encodeURIComponent(exerciseId)}&target=${target}&reps=${seed.current.reps}&angles=${encodeURIComponent(JSON.stringify(seed.current.angles))}`,
+          uri: `${base}/tracker.html?prepare=1&exercise=${encodeURIComponent(exerciseId)}&target=${target}&reps=${seed.current.reps}&angles=${encodeURIComponent(JSON.stringify(seed.current.angles))}`,
         }}
         originWhitelist={["https://*", "http://*"]}
         mediaCapturePermissionGrantType="grant"
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
+        onLoadEnd={()=>{loaded.current=true;if(active&&permission?.granted)frame.current?.postMessage(JSON.stringify({type:'start'}));}}
         onShouldStartLoadWithRequest={(request) =>
           request.url.startsWith(`${base}/tracker.html`) ||
           request.url === "about:blank"
@@ -65,6 +68,5 @@ export function PoseTracker({
         }}
       />
       {!!error && <Copy>{error}</Copy>}
-    </>
-  );
+    </>;
 }

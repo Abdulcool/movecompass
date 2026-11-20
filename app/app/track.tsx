@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { randomUUID } from 'expo-crypto';
-import { Text, TextInput } from "react-native";
+import { Text, TextInput,View } from "react-native";
 import { Image } from "expo-image";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { exercises } from "@movecompass/pose";
@@ -25,7 +25,6 @@ export default function Track() {
   const [angles, setAngles] = useState<Record<string,number>>({});
   const [draftReady, setDraftReady] = useState(false), [hasDraft, setHasDraft] = useState(false);
   const clientId = useRef(randomUUID());
-  const initial = useRef({reps:0,angles:{} as Record<string,number>});
   const key = session.user && e ? draftKey(session.base,session.user.id,e.id) : '';
   useEffect(()=>{
     let active=true;setDraftReady(false);
@@ -115,7 +114,7 @@ export default function Track() {
           <Button
             title="Start live pose tracking"
             disabled={!consent || !draftReady || allDone}
-            onPress={() => {initial.current={reps,angles};setStarted(true);}}
+            onPress={() => setStarted(true)}
           />
         </Card>
       ) : (
@@ -123,24 +122,16 @@ export default function Track() {
           <Title level={2}>
             {reps} / {exercise.reps} reps
           </Title>
-          {!saved && !allDone && (
-            <PoseTracker
-              exerciseId={exercise.id}
-              target={exercise.reps}
-              initialReps={initial.current.reps}
-              initialAngles={initial.current.angles}
-              onManual={()=>{if(reps>0)void save(reps,'manual');else {setManualCount(String(exercise.reps));setManualOpen(true);}}}
-              onRep={onRep}
-              onComplete={(count, angles) => void save(count, "camera", angles)}
-            />
-          )}
-          <Button
+        </>
+      )}
+      {draftReady&&!saved&&!allDone&&<View aria-hidden={!started} accessibilityElementsHidden={!started} style={started?undefined:{height:1,opacity:0,overflow:'hidden'}}>
+        <PoseTracker exerciseId={exercise.id} target={exercise.reps} active={started} initialReps={reps} initialAngles={angles} onRep={onRep} onComplete={(count,rom)=>void save(count,'camera',rom)}/>
+      </View>}
+      {(started||saved)&&<Button
             title={allDone?'All sets done today':saved ? "Session saved" : "Finish and save"}
             disabled={busy || saved || allDone || reps < 1}
             onPress={() => void save(reps, "camera")}
-          />
-        </>
-      )}
+          />}
       <Button
         title={allDone?'All sets done today':'Complete manually without camera'}
         disabled={busy || saved || allDone}

@@ -7,6 +7,7 @@ export interface PoseTrackerProps {
   onManual?: () => void;
   onComplete: (reps: number, angles: Record<string, number>) => void;
   target: number;
+  active?:boolean;
 }
 export type TrackerMessage =
   | {type:'resize';height:number}

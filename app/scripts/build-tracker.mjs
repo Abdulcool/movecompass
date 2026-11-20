@@ -16,6 +16,9 @@ const base=`/tracker/assets/${hash.digest('hex').slice(0,16)}`;
 const sizes=Object.fromEntries(buffers.map(([name,buffer])=>[name,buffer.length]));
 await mkdir(`${root}dist${base}`,{recursive:true});
 for(const [name,buffer] of buffers){const path=`${root}dist${base}/${name}`;await writeFile(path,buffer);await writeFile(`${path}.br`,brotliCompressSync(buffer));await writeFile(`${path}.gz`,gzipSync(buffer));}
+await build({entryPoints:[`${root}tracker/detector.worker.ts`],outfile:`${root}dist/tracker/worker.js`,bundle:true,format:'iife',target:'es2022',minify:true});
+const worker=await readFile(`${root}dist/tracker/worker.js`),workerName=`main-${createHash('sha256').update(worker).digest('hex').slice(0,16)}.js`;
+await rename(`${root}dist/tracker/worker.js`,`${root}dist/tracker/${workerName}`);
 await build({
   entryPoints: [`${root}tracker/main.ts`],
   outfile: `${root}dist/tracker/main.js`,
@@ -23,7 +26,7 @@ await build({
   format: "esm",
   target: "es2022",
   minify: true,
-  define:{__TRACKER_ASSETS__:JSON.stringify({base,sizes})},
+  define:{__TRACKER_ASSETS__:JSON.stringify({base,sizes}),__TRACKER_WORKER__:JSON.stringify(`/tracker/${workerName}`)},
 });
 const js=await readFile(`${root}dist/tracker/main.js`),name=`main-${createHash('sha256').update(js).digest('hex').slice(0,16)}.js`;
 await rename(`${root}dist/tracker/main.js`,`${root}dist/tracker/${name}`);

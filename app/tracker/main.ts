@@ -1,4 +1,4 @@
-import { PoseLandmarker } from "@mediapipe/tasks-vision";
+import {createDetector} from './detector';
 import { createTracker, getExercise, joints, visibleInFrame as visible } from "@movecompass/pose";
 import { angleSummary, relevantJoints, rangeProgress } from "./metrics";
 import { setProgress } from './progress';
@@ -19,25 +19,13 @@ if(window.parent===window&&!window.ReactNativeWebView){
   const title=document.createElement('h1');title.id='name';title.textContent=el('name').textContent;el('name').replaceWith(title);
 }
 declare const __TRACKER_ASSETS__:{base:string;sizes:Record<string,number>};
-async function loadAssets(){
-  const received:Record<string,number>={},total=Object.values(__TRACKER_ASSETS__.sizes).reduce((a,b)=>a+b,0);
-  const result=await Promise.all(Object.keys(__TRACKER_ASSETS__.sizes).map(async name=>{
-    const response=await fetch(`${__TRACKER_ASSETS__.base}/${name}`);if(!response.ok)throw new Error('Tracker download failed. Please try again.');
-    const reader=response.body?.getReader(),chunks:Uint8Array[]=[];received[name]=0;
-    if(!reader){const buffer=await response.arrayBuffer();return [name,name.endsWith('.task')?new Uint8Array(buffer):undefined] as const;}
-    while(true){const {done,value}=await reader.read();if(done)break;received[name]+=value.length;if(name.endsWith('.task'))chunks.push(value);
-      const percent=Math.min(100,Math.round(Object.values(received).reduce((a,b)=>a+b,0)/total*100));el('download').textContent=`Preparing local tracker · ${percent}%`;el('download-progress').setAttribute('value',String(percent));}
-    if(!name.endsWith('.task'))return [name,undefined] as const;
-    const model=new Uint8Array(received[name]);let offset=0;for(const chunk of chunks){model.set(chunk,offset);offset+=chunk.length;}return [name,model] as const;
-  }));
-  return result.find(([name])=>name.endsWith('.task'))![1]!;
-}
+declare const __TRACKER_WORKER__:string;
 const params = new URLSearchParams(location.search);
 let seedAngles: Record<string,number> = {};
 try { const seed=JSON.parse(params.get('angles')||'{}');if(seed && typeof seed==='object' && !Array.isArray(seed) && Object.values(seed).every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=360))seedAngles=seed; } catch {}
 const progress = setProgress(Number(params.get('reps')||0),seedAngles);
 let lastEmit = 0;
-let pose: PoseLandmarker | undefined,
+let pose: ReturnType<typeof createDetector> | undefined,
   stream: MediaStream | undefined,
   raf = 0,
   stopped = false,
@@ -45,6 +33,16 @@ let pose: PoseLandmarker | undefined,
 let generation = 0,
   lastTime = -1,
   lastReps = progress.value().reps;
+let preparing:Promise<void>|undefined;
+function prepare(){
+  if(!preparing){
+    pose=createDetector(__TRACKER_WORKER__,__TRACKER_ASSETS__,({phase,percent})=>{
+      el('download').textContent=phase;el('phase').textContent=phase;el('download-progress').setAttribute('value',String(percent));
+    },timings=>window.dispatchEvent(new CustomEvent('movecompass:init',{detail:timings})));
+    preparing=pose.ready.catch(error=>{preparing=undefined;throw error;});
+  }
+  return preparing;
+}
 function emit(message: unknown) {
   const serialized = JSON.stringify(message);
   if (window.ReactNativeWebView)
@@ -53,14 +51,13 @@ function emit(message: unknown) {
     window.parent.postMessage(message, location.origin);
 }
 new ResizeObserver(()=>emit({type:'resize',height:el('tracker').scrollHeight+32})).observe(el('tracker'));
-function stop() {
+function stop(release=true) {
   stopped = true;
   generation++;
   cancelAnimationFrame(raf);
   stream?.getTracks().forEach((track) => track.stop());
   stream = undefined;
-  pose?.close();
-  pose = undefined;
+  if(release){pose?.close();pose=undefined;preparing=undefined;}
   video.srcObject = null;
 }
 function fail(error: unknown) {
@@ -79,16 +76,16 @@ el("stop").onclick = () => {
   el("retry").hidden = false;
 };
 el("retry").onclick = () => void start();
-window.addEventListener("pagehide", stop);
+window.addEventListener("pagehide",()=>stop());
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
+  if (document.hidden&&stream) {
     stop();
     el("phase").textContent = "Camera paused";
     el("retry").hidden = false;
   }
 });
 async function start() {
-  stop();
+  stop(false);
   const run = ++generation;
   stopped = false;
   completed = false;
@@ -105,7 +102,9 @@ async function start() {
     el("name").textContent = exercise.name;
     el("counter").textContent = `${lastReps} / ${target}`;
     emit({ type: "rep", ...progress.value() });
-    el("phase").textContent = "Loading local pose model…";
+    const prepared=prepare();
+    void prepared.catch(()=>{});
+    el('download').hidden=false;el('download-progress').hidden=false;
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
       throw new Error("Camera access needs HTTPS (or localhost).");
     const media = await navigator.mediaDevices.getUserMedia({
@@ -124,34 +123,9 @@ async function start() {
     video.srcObject = media;
     await video.play();
     el('download').hidden=false;el('download-progress').hidden=false;
-    const modelAssetBuffer=await loadAssets();
-    const files={wasmLoaderPath:`${__TRACKER_ASSETS__.base}/vision_wasm_internal.js`,wasmBinaryPath:`${__TRACKER_ASSETS__.base}/vision_wasm_internal.wasm`};
-    const options = {
-      baseOptions: {
-        modelAssetBuffer,
-        delegate: "GPU" as "GPU" | "CPU",
-      },
-      runningMode: "VIDEO" as const,
-      numPoses: 3,
-      minPoseDetectionConfidence: 0.5,
-      minPosePresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    };
-    let detector: PoseLandmarker;
-    try {
-      detector = await PoseLandmarker.createFromOptions(files, options);
-    } catch {
-      detector = await PoseLandmarker.createFromOptions(files, {
-        ...options,
-        baseOptions: { ...options.baseOptions, delegate: "CPU" },
-      });
-    }
-    if (run !== generation) {
-      detector.close();
-      return;
-    }
-    pose = detector;
-    el('download').hidden=true;el('download-progress').hidden=true;
+    await prepared;
+    if (run !== generation)return;
+    el('download').textContent='Starting first camera frame…';
     const tracker = createTracker(exercise.id),
       summary = angleSummary(),
       keys = relevantJoints(exercise.id);
@@ -166,7 +140,7 @@ async function start() {
     };
     const input=document.createElement('canvas'),inputContext=input.getContext('2d',{alpha:false,willReadFrequently:true})!;
     let nextInferenceAt=0,averageCost=0;
-    function frame() {
+    async function frame() {
       if (stopped || run !== generation || !pose) return;
       try {
         if (video.readyState >= 2 && video.currentTime !== lastTime && performance.now()>=nextInferenceAt) {
@@ -177,7 +151,9 @@ async function start() {
           inputContext.drawImage(video,0,0,inputWidth,inputHeight);
           const pixels=inputContext.getImageData(0,0,inputWidth,inputHeight),lighting=enhanceDimFrame(pixels.data);
           if(lighting.enhanced)inputContext.putImageData(pixels,0,0);
-          const result = pose.detectForVideo(input, timestampMs);
+          const result = await pose.detect(pixels, timestampMs);
+          if(stopped||run!==generation)return;
+          el('download-progress').setAttribute('value','100');el('download').hidden=true;el('download-progress').hidden=true;
           currentPeople=result.landmarks;
           const selected=selector.update(result.landmarks),index=selected.index;
           el('selection').hidden=!selected.needsSelection;
@@ -209,7 +185,7 @@ async function start() {
           ctx.strokeStyle = "#9FD8BE";
           ctx.fillStyle = "#E78367";
           ctx.beginPath();
-          for (const { start, end } of PoseLandmarker.POSE_CONNECTIONS) {
+          for (const { start, end } of pose!.connections) {
             const a = points[start],
               b = points[end];
             if (visible(a) && visible(b)) {
@@ -290,7 +266,7 @@ async function start() {
         }
         raf = requestAnimationFrame(frame);
       } catch (error) {
-        fail(error);
+        if(run===generation)fail(error);
       }
     }
     raf = requestAnimationFrame(frame);
@@ -298,4 +274,11 @@ async function start() {
     if (run === generation) fail(error);
   }
 }
-void start();
+let requested=false;
+function requestStart(){if(!requested){requested=true;void start();}}
+window.addEventListener('message',event=>{
+  if(event.source===window.parent&&event.origin===location.origin&&event.data?.type==='start')requestStart();
+  if(window.ReactNativeWebView)try{if(JSON.parse(event.data).type==='start')requestStart();}catch{}
+});
+document.addEventListener('message',event=>{if(window.ReactNativeWebView)try{if(JSON.parse((event as MessageEvent).data).type==='start')requestStart();}catch{}});
+if(params.get('prepare')==='1')void prepare().catch(fail);else void start();

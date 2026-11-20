@@ -6,12 +6,15 @@ export type { PoseTrackerProps } from "./tracker-contract";
 export function PoseTracker({
   exerciseId,
   target,
+  active=true,
   initialReps=0,
   initialAngles={},
   onRep,
   onComplete,
 }: PoseTrackerProps) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const loaded=useRef(false);
+  useEffect(()=>{if(active&&loaded.current)frame.current?.contentWindow?.postMessage({type:'start'},location.origin);},[active]);
   const [error, setError] = useState("");
   const [height,setHeight]=useState(790);
   const seed=useRef({reps:initialReps,angles:initialAngles}),latest=useRef(seed.current);
@@ -38,7 +41,9 @@ export function PoseTracker({
       <iframe
         ref={frame}
         title="Live pose tracking"
-        src={`/tracker.html?exercise=${encodeURIComponent(exerciseId)}&target=${target}&reps=${seed.current.reps}&angles=${encodeURIComponent(JSON.stringify(seed.current.angles))}`}
+        src={`/tracker.html?prepare=1&exercise=${encodeURIComponent(exerciseId)}&target=${target}&reps=${seed.current.reps}&angles=${encodeURIComponent(JSON.stringify(seed.current.angles))}`}
+        tabIndex={active?0:-1}
+        onLoad={()=>{loaded.current=true;if(active)frame.current?.contentWindow?.postMessage({type:'start'},location.origin);}}
         allow="camera"
         style={{ width: "100%", height, border: 0, borderRadius: 20 }}
       />
