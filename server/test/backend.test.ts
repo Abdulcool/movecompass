@@ -108,6 +108,8 @@ describe('completion contract and storage',()=>{
     expect((await request(backend.app).get('/api/events').auth(token,{type:'bearer'})).body.dailySets['sit-to-stand']).toBe(1);
     const second=await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send({...completion,source:'manual'});
     expect(second.body.event.setNumber).toBe(2);
+    await request(backend.app).post('/api/completions').auth(token,{type:'bearer'}).send(completion).expect(409);
+    expect((await request(backend.app).get('/api/events').auth(token,{type:'bearer'})).body.total).toBe(2);
   });
   it('deduplicates app retries with a durable patient-scoped client UUID',async()=>{
     const token=await login();const data={...completion,clientId:'c7315c2c-9588-4ce7-a216-bb884732122a'};

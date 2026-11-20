@@ -55,12 +55,13 @@ export default function Track() {
       </Page>
     );
   const exercise = e;
+  const allDone=(session.dailySets[exercise.id]||0)>=exercise.sets;
   async function save(
     count: number,
     source: "manual" | "camera",
     rom: Record<string, number> = angles,
   ) {
-    if (saving.current) return;
+    if (saving.current||allDone) return;
     if (!Number.isInteger(count) || count < 1 || count > 100) { setMessage('Complete at least one rep before saving.'); return; }
     saving.current = true;
     setBusy(true);
@@ -112,7 +113,7 @@ export default function Track() {
           />
           <Button
             title="Start live pose tracking"
-            disabled={!consent || !draftReady}
+            disabled={!consent || !draftReady || allDone}
             onPress={() => {initial.current={reps,angles};setStarted(true);}}
           />
         </Card>
@@ -121,7 +122,7 @@ export default function Track() {
           <Title>
             {reps} / {exercise.reps} reps
           </Title>
-          {!saved && (
+          {!saved && !allDone && (
             <PoseTracker
               exerciseId={exercise.id}
               target={exercise.reps}
@@ -133,15 +134,15 @@ export default function Track() {
             />
           )}
           <Button
-            title={saved ? "Session saved" : "Finish and save"}
-            disabled={busy || saved || reps < 1}
+            title={allDone?'All sets done today':saved ? "Session saved" : "Finish and save"}
+            disabled={busy || saved || allDone || reps < 1}
             onPress={() => void save(reps, "camera")}
           />
         </>
       )}
       <Button
-        title="Complete manually without camera"
-        disabled={busy || saved}
+        title={allDone?'All sets done today':'Complete manually without camera'}
+        disabled={busy || saved || allDone}
         secondary
         onPress={() => { if(reps>0)void save(reps, "manual");else {setManualCount(String(exercise.reps));setManualOpen(true);} }}
       />

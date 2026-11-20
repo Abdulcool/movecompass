@@ -18,6 +18,11 @@ async function read(key:string):Promise<PendingSet[]> {
 export function enqueueSet(key:string,item:PendingSet) {
   return exclusive(key,async()=>{const items=await read(key);if(!items.some(i=>i.clientId===item.clientId))items.push(item);await AsyncStorage.setItem(key,JSON.stringify(items));return items.length;});
 }
+export async function queuedSetCounts(key:string){
+  const today=new Date().toDateString(),counts:Record<string,number>={};
+  for(const item of await read(key))if(new Date(item.completedAt).toDateString()===today)counts[item.exerciseId]=(counts[item.exerciseId]||0)+1;
+  return counts;
+}
 export function flushSets(key:string,post:(item:PendingSet)=>Promise<{event:Event}>) {
   return exclusive(key,async()=>{
     let items=await read(key);const sent:Event[]=[],rejected:PendingSet[]=[];

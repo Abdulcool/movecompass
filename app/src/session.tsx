@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from 'expo-crypto';
-import { enqueueSet, flushSets, outboxKey } from './outbox';
+import { enqueueSet, flushSets, outboxKey,queuedSetCounts } from './outbox';
 import { AppState,Pressable,Text,View } from "react-native";
 import { api, ApiError, baseUrl, type User, type Event, type Device } from "./api";
 import { notify } from "./notifications";
@@ -100,6 +100,13 @@ function useSessionState() {
     [error, setError] = useState("");
   const [authStatus,setAuthStatus]=useState('');
   const base = baseUrl(setting);
+  const authoritativeDaily=useRef<Record<string,number>>({});
+  async function updateDailySets(counts?:Record<string,number>,fresh=true){
+    if(counts)authoritativeDaily.current=fresh?counts:Object.fromEntries(Array.from(new Set([...Object.keys(authoritativeDaily.current),...Object.keys(counts)])).map(id=>[id,Math.max(authoritativeDaily.current[id]||0,counts[id]||0)]));
+    const pending=user?await queuedSetCounts(outboxKey(base,user.id)):{};
+    const next={...authoritativeDaily.current};for(const [id,count]of Object.entries(pending))next[id]=(next[id]||0)+count;
+    setDailySets(next);
+  }
   const toast=toasts[0]?.message||'',toastId=toasts[0]?.id;
   const setToast=useCallback((message:string)=>setToasts(items=>message?[...items,{id:randomUUID(),message}]:items.slice(1)),[]);
   useEffect(()=>{if(!toastId)return;const timer=setTimeout(()=>setToasts(items=>items[0]?.id===toastId?items.slice(1):items),8000);return()=>clearTimeout(timer);},[toastId]);
@@ -162,7 +169,7 @@ function useSessionState() {
       for(const e of data.events){knownEvents.current.add(e.id);snapshotSeq.current=Math.max(snapshotSeq.current,e.seq||0);}
       setEvents(current=>mergeEvents(data.events,current));
       setTotal(t=>fresh?data.total:Math.max(t,data.total)); setWeeklyTotal(t=>fresh?data.weeklyTotal:Math.max(t,data.weeklyTotal));
-      setDailySets(current=>fresh?data.dailySets:Object.fromEntries(Array.from(new Set([...Object.keys(current),...Object.keys(data.dailySets)])).map(id=>[id,Math.max(current[id]||0,data.dailySets[id]||0)])));
+      await updateDailySets(data.dailySets,fresh);
       if (user?.role === "staff")
         setDevices(
           (await api<{ devices: Device[] }>(base, "/api/devices", token))
@@ -183,6 +190,7 @@ function useSessionState() {
     try {
       const result=await flushSets(outboxKey(base,user.id),item=>api<{event:Event}>(base,'/api/completions',token,item));
       setQueuedCount(result.pending);
+      await updateDailySets();
       if(result.rejected.length)setToast(`${result.rejected.length} saved set(s) couldn't sync. They are kept on this device for review. Please contact your care team.`);
       if(result.sent.length){setEvents(es=>[...result.sent,...es.filter(e=>!result.sent.some(s=>s.id===e.id))]);void refresh();}
       if(result.error){setOffline(result.error.status===0 || result.error.status>=500);setError(result.error.message);}
@@ -275,13 +283,14 @@ function useSessionState() {
     setSetting(url.replace(/\/$/, ""));
   }
   async function complete(
-    exercise: { id: string; name: string },
+    exercise: { id: string; name: string;sets:number },
     reps: number,
     source: "manual" | "camera",
     angles: Record<string, number> = {},
     clientId = randomUUID(),
   ) {
     if(!user)throw new Error('Please sign in to save this set.');
+    if((dailySets[exercise.id]||0)>=exercise.sets)throw new Error('All sets done today');
     const key=outboxKey(base,user.id);
     await enqueueSet(key,{
         clientId,
@@ -292,9 +301,10 @@ function useSessionState() {
         angles,
         completedAt:new Date().toISOString(),
     });
+    await updateDailySets();
     const result=await flushSets(key,item=>api<{event:Event}>(base,'/api/completions',token,item));
     setQueuedCount(result.pending);
-    if(result.rejected.some(item=>item.clientId===clientId))throw new Error("This set couldn't sync. It is kept on this device for review. Please contact your care team.");
+    if(result.rejected.some(item=>item.clientId===clientId)){void refresh();throw new Error("This set couldn't sync. All sets may already be done today. It is kept on this device for review.");}
     const event=result.sent.find(e=>e.exerciseId===exercise.id);
     if(!event){setOffline(!result.error || result.error.status===0 || result.error.status>=500);return {queued:true as const};}
     setEvents((es) => [event, ...es.filter((e) => e.id !== event.id)]);

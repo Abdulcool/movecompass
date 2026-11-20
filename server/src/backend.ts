@@ -12,6 +12,7 @@ import { Expo, type ExpoPushMessage } from 'expo-server-sdk';
 import { getExercise, exercises } from '../../packages/pose/src/exercises';
 
 type Role = 'patient' | 'staff';
+class CompletionConflict extends Error {status=409;}
 interface User { id: string; email: string; name: string; role: Role; password_hash: string }
 interface Identity { id: string; role: Role; exp: number; jti: string }
 interface Device { id: string; name: string; patient_id: string; key_hash: string; last_seen: string | null }
@@ -212,7 +213,7 @@ export function createBackend(options: Options = {}) {
       if(previous)return JSON.parse(previous.payload) as CompletionEvent;
     }
     db.transaction(()=>{
-      if(event.patientId){event.setNumber=(dailyCounts(event.patientId,event.completedAt)[event.exerciseId]||0)+1;event.totalSets=knownExercise(event.exerciseId)?.sets;}
+      if(event.patientId){event.setNumber=(dailyCounts(event.patientId,event.completedAt)[event.exerciseId]||0)+1;event.totalSets=knownExercise(event.exerciseId)?.sets;if(event.totalSets&&event.setNumber>event.totalSets)throw new CompletionConflict('All sets done today');}
       const inserted=db.prepare('INSERT INTO events(patient_id, payload) VALUES (?, ?)').run(event.patientId, JSON.stringify(event));
       event.seq=Number(inserted.lastInsertRowid);
       db.prepare('UPDATE events SET payload = ? WHERE id = ?').run(JSON.stringify(event),event.seq);
@@ -419,7 +420,7 @@ export function createBackend(options: Options = {}) {
   });
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const status = object(error) && typeof error.status === 'number' && error.status >= 400 && error.status < 500 ? error.status : 500;
-    res.status(status).json({errors: [status === 413 ? 'Request too large' : status === 500 ? 'Internal server error' : 'Invalid JSON request']});
+    res.status(status).json({errors: [error instanceof CompletionConflict?error.message:status === 413 ? 'Request too large' : status === 500 ? 'Internal server error' : 'Invalid JSON request']});
   });
   return {app, server, db, async close() {
     clearInterval(heartbeat);

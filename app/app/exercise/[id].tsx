@@ -34,7 +34,9 @@ export default function Detail() {
       </Page>
     );
   const e = exercise;
+  const allDone=(session.dailySets[e.id]||0)>=e.sets;
   async function complete() {
+    if(busy||saved||allDone)return;
     setBusy(true);
     try {
       const result=await session.complete(e, e.reps, "manual",{},clientId.current);
@@ -79,14 +81,15 @@ export default function Detail() {
         <Copy>This feature is guidance, not diagnosis.</Copy>
       </Card>
       <Button
-        title="Start guided tracking"
+        title={allDone?'All sets done today':'Start guided tracking'}
+        disabled={allDone}
         onPress={() =>
           router.push({ pathname: "/track", params: { id: e.id } })
         }
       />
       <Button
-        title={saved ? "Completed" : busy ? "Saving…" : "Mark complete"}
-        disabled={busy || saved}
+        title={allDone?'All sets done today':saved ? "Completed" : busy ? "Saving…" : "Mark complete"}
+        disabled={busy || saved || allDone}
         secondary
         onPress={() => void complete()}
       />
