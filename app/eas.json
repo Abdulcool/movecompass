@@ -4,7 +4,7 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
-      "env": {"EXPO_PUBLIC_API_URL": "https://movecompass--rnf1wc1p.preview.devinapps.com"},
+      "env": {"EXPO_PUBLIC_API_URL": "https://movecompass.onrender.com"},
       "android": {"buildType": "apk"}
     }
   }

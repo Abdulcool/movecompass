@@ -1,8 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-vi.mock("react-native", () => ({ Platform: { OS: "web" } }));
+import {readFileSync} from 'node:fs';
+const platform=vi.hoisted(()=>({OS:'web'}));
+vi.mock("react-native", () => ({ Platform: platform }));
 import { api, baseUrl } from "../src/api";
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {platform.OS='web';vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe("app API client", () => {
+  it.each([
+    ['',undefined,'https://movecompass.onrender.com'],
+    ['','https://care.example/','https://care.example'],
+    ['https://override.example/','https://care.example','https://override.example'],
+  ])('resolves native backend with setting=%s and environment=%s',(setting,environment,expected)=>{
+    platform.OS='android';vi.stubEnv('EXPO_PUBLIC_API_URL',environment);
+    expect(baseUrl(setting!)).toBe(expected);
+  });
+  it('uses Render in the preview phone build profile',()=>{
+    const config=JSON.parse(readFileSync(new URL('../eas.json',import.meta.url),'utf8'));
+    expect(config.build.preview.env.EXPO_PUBLIC_API_URL).toBe('https://movecompass.onrender.com');
+  });
   it("uses the web origin instead of a settings override", () => {
     vi.stubGlobal("window", { location: { origin: "https://care.example" } });
     expect(baseUrl("https://other.example")).toBe("https://care.example");

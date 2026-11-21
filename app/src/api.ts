@@ -29,7 +29,7 @@ export interface Device {
 export function baseUrl(setting: string) {
   return Platform.OS === "web"
     ? window.location.origin
-    : (setting || process.env.EXPO_PUBLIC_API_URL || "https://movecompass--rnf1wc1p.preview.devinapps.com").replace(/\/$/, "");
+    : (setting || process.env.EXPO_PUBLIC_API_URL || "https://movecompass.onrender.com").replace(/\/$/, "");
 }
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); }
