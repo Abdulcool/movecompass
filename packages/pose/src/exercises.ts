@@ -1,4 +1,5 @@
 import { type Angles, type Confidence, type Landmark, visibleInFrame as visible } from './angles';
+import {calfLift} from './calf';
 export interface FormCheck { test: (a: Angles) => boolean; message: string }
 export interface Tracking {
   metric: (a: Angles, p: Landmark[], width: number, height: number, confidence?: Confidence) => number | null;
@@ -75,7 +76,7 @@ export const exercises: Exercise[] = [
     steps: ['Stand behind a counter with hands resting gently on it.', 'Lift your heels slowly while keeping your weight even across both feet.', 'Lower with control and pause before the next repetition.'],
     safety: 'Keep the movement smooth. Sit and rest if you feel light-headed.', target: 'Calves + ankles', gif: 'calf-raise.gif',
     angleGuide: [{label: 'Ankle lift', target: 'Smooth rise'}, {label: 'Knees', target: 'Soft, not locked'}],
-    tracking: {side: 'both', metric: (_a, p, w, h) => ratio(p, [25, 26, 27, 28, 31, 32], () => [(p[31].y + p[32].y - p[27].y - p[28].y) / 2 * h, (Math.hypot((p[25].x - p[27].x) * w, (p[25].y - p[27].y) * h) + Math.hypot((p[26].x - p[28].x) * w, (p[26].y - p[28].y) * h)) / 2]), mode: 'baseline', enterAbove: 0.06, exitBelow: 0.02, minRepMs: 800, targetRangeLabel: 'Raise your heels, then lower with control', formChecks: [chest]},
+    tracking: {side: 'best', metric: (_a, p, w, h) => calfLift(p,w,h), mode: 'baseline', enterAbove: 0.06, exitBelow: 0.02, minRepMs: 800, targetRangeLabel: 'Raise your heels, then lower with control', formChecks: [chest]},
   },
 ];
 export function getExercise(id: string): Exercise {

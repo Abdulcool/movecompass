@@ -3,6 +3,7 @@ import {missingBodyParts} from './visibility';
 import { OneEuroFilter } from './filter';
 import { getExercise } from './exercises';
 import { RepCounter } from './counter';
+import {visibleLeg,calfLift,type Leg} from './calf';
 export * from './angles';
 export * from './math';
 export * from './filter';
@@ -17,6 +18,7 @@ export function createTracker(exerciseId: string) {
   let time = -Infinity, validTime = -Infinity;
   let baseline: number | null = null;
   let calibration: {time: number; value: number}[] = [];
+  let leg:Leg|null=null;
   const smooth = (points: Landmark[], prefix: string, timestamp: number) => points.map((p, i) => {
     if (!(prefix==='i'?visibleInFrame(p):visible(p))) { for (const axis of ['x', 'y', 'z']) filters.delete(`${prefix}${i}${axis}`); return p; }
     const out = {...p};
@@ -39,12 +41,17 @@ export function createTracker(exerciseId: string) {
       const world = smooth(flatten(frame.worldLandmarks), 'w', time);
       const result = extractAngles({...frame, landmarks: p, worldLandmarks: world});
       let metric = frame.width > 0 && frame.height > 0 ? exercise.tracking.metric(result.angles, p, frame.width, frame.height, result.confidence) : null;
+      if(exerciseId==='calf-raise'){
+        const selected=visibleLeg(p,leg);
+        if(selected&&selected!==leg){baseline=null;calibration=[];counter.interrupt();leg=selected;}
+        metric=calfLift(p,frame.width,frame.height,selected);
+      }
       let calibrating = false;
       if (exercise.tracking.mode === 'baseline' && metric !== null) {
         if (baseline === null) {
           if (time - validTime > 500) calibration = [];
           const raw = extractAngles(frame);
-          const value = exercise.tracking.metric(raw.angles, flatten(frame.landmarks), frame.width, frame.height, raw.confidence);
+          const value = exerciseId==='calf-raise'?calfLift(flatten(frame.landmarks),frame.width,frame.height,leg):exercise.tracking.metric(raw.angles, flatten(frame.landmarks), frame.width, frame.height, raw.confidence);
           calibration = calibration.filter(s => time - s.time <= 1200);
           if (value !== null) calibration.push({time, value});
           const mean = calibration.reduce((sum,s)=>sum+s.value,0)/calibration.length;
@@ -64,6 +71,6 @@ export function createTracker(exerciseId: string) {
       output = {...result,missing, metric, reps: counter.reps, phase: counter.phase, feedback: missing.length?`Can't see your ${missing.join(' and ')} — adjust the camera.`:calibrating ? 'Stand still for one second to calibrate' : counter.feedback, lastRep: counter.lastRep};
       return output;
     },
-    reset() { counter = new RepCounter(exercise.tracking); filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; output = {...empty(),missing:[], metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
+    reset() { counter = new RepCounter(exercise.tracking); filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; leg=null;output = {...empty(),missing:[], metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
   };
 }

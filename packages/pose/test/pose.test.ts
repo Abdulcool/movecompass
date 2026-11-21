@@ -184,6 +184,7 @@ describe('exercise metrics and copy', () => {
     p[23].x+=.08; p[24].x+=.08;
     expect(getExercise('hip-shift').tracking.metric(a,p,1000,1000)).toBeCloseTo(.4);
     p[27].visibility=.1;
+    p[28].visibility=.1;
     expect(getExercise('calf-raise').tracking.metric(a,p,1000,1000)).toBeNull();
   });
 });
@@ -238,7 +239,7 @@ describe('tracker integration', () => {
   it('does not invent angles or reps for invisible frames or invalid geometry', () => {
     const t=createTracker('sit-to-stand'); const p=points().map(v=>({...v,visibility:0}));
     const r=t.update(sample(p,0));
-    expect(r.metric).toBeNull(); expect(r.reps).toBe(0); expect(r.feedback).toContain('visible');
+    expect(r.metric).toBeNull(); expect(r.reps).toBe(0); expect(r.feedback).toContain("Can't see your hips");
     expect(t.update(sample(points(),-1))).toBe(r);
     expect(t.update({...sample(points(),100),width:0}).metric).toBeNull();
   });
