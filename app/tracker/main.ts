@@ -164,10 +164,12 @@ async function start() {
           currentPeople=result.landmarks;
           const selected=selector.update(result.landmarks),index=selected.index;
           el('selection').hidden=!selected.needsSelection;
-          const choices=el('people');if(selected.needsSelection||choices.hasChildNodes())choices.replaceChildren();
+          const choices=el('people'),indices=new Set(selected.needsSelection?selected.people.map(person=>String(person.index)):[]);
+          for(const button of choices.querySelectorAll<HTMLButtonElement>('button'))if(!indices.has(button.dataset.person!))button.remove();
           if(selected.needsSelection)for(const person of selected.people){
-            const button=document.createElement('button');button.textContent=`Person ${person.index+1}`;
-            button.onclick=()=>{selector.choose(currentPeople,person);tracker.reset();progress.begin();};choices.append(button);
+            let button=choices.querySelector<HTMLButtonElement>(`button[data-person="${person.index}"]`);
+            if(!button){button=document.createElement('button');button.dataset.person=String(person.index);button.textContent=`Person ${person.index+1}`;choices.append(button);}
+            button.onclick=()=>{selector.choose(currentPeople,person);tracker.reset();progress.begin();};
           }
           const inferenceMs=performance.now()-timestampMs;
           averageCost=averageCost?averageCost*.8+inferenceMs*.2:inferenceMs;
