@@ -97,6 +97,8 @@ async function start() {
   el("retry").hidden = true;
   try {
     const exercise = getExercise(params.get("exercise") || "sit-to-stand");
+    el('arm-tally').hidden=exercise.id!=='pendulum';
+    el('arm-tally').textContent=exercise.id==='pendulum'?'This camera run · Left arm: 0 · Right arm: 0':'';
     const rawTarget = params.get("target");
     const target = rawTarget === null ? exercise.reps : Number(rawTarget);
     if (!Number.isInteger(target) || target < 1 || target > 100)
@@ -239,6 +241,10 @@ async function start() {
           }
           const countLabel=`${current.reps} / ${target}`;
           if(el('counter').textContent!==countLabel)el('counter').textContent=countLabel;
+          if(exercise.id==='pendulum'){
+            const tally=`This camera run · Left arm: ${output.armReps.left} · Right arm: ${output.armReps.right}`;
+            if(el('arm-tally').textContent!==tally)el('arm-tally').textContent=tally;
+          }
           if(el('phase').textContent!==output.phase)el('phase').textContent=output.phase;
           const feedback=output.missing.length?'':output.feedback;
           if(el('feedback').textContent!==feedback)el('feedback').textContent=feedback;

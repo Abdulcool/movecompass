@@ -47,8 +47,8 @@ try{await Promise.all(Array.from({length:Number(process.env.WORKERS||3)},async()
  const page=await browser.newPage();await page.route('**/accuracy2/**',route=>route.fulfill({path:folder+'/'+new URL(route.request().url()).pathname.split('/').pop(),contentType:'image/png'}));
  await page.goto(base+'/healthz');await page.addScriptTag({type:'module',content:bundle.outputFiles[0].text});await page.waitForFunction(()=>typeof window.runAccuracy==='function');
  console.log('START '+mode+' '+rate+' '+row.file+' '+frames+' frames');
- const result=await page.evaluate(spec=>window.runAccuracy(spec),{id,file:row.file,exercise:row.exercise,frames,fps,delegate,baseline:mode==='baseline',assets:base+manifest.base,hint:row.file.includes('nia-group')?{x:.21,y:.43}:undefined});
- const summary={file:row.file,exercise:row.exercise,true:Number(row.true_reps),fps,frames,delegate,framing,reps:result.traces.at(-1)?.reps||0};
+ const result=await page.evaluate(spec=>window.runAccuracy(spec),{id,file:row.file,exercise:row.exercise,frames,fps,delegate,baseline:mode==='baseline',assets:base+manifest.base,hint:row.file.includes('nia-group')?{x:.21,y:.43}:row.file.includes('abelson')?{x:.34,y:.53}:undefined});
+ const summary={file:row.file,exercise:row.exercise,true:Number(row.true_reps),fps,frames,delegate,framing,reps:result.traces.at(-1)?.reps||0,armReps:result.traces.at(-1)?.armReps};
  await writeFile(output,JSON.stringify({...result,summary}));results.push(summary);console.log(JSON.stringify(summary));await page.close();
  }
 }));await writeFile(`${work}/${variant}-${framing}-${rate}-summary.json`,JSON.stringify(results,null,2));}finally{await browser.close();}
