@@ -4,6 +4,7 @@ import { OneEuroFilter } from './filter';
 import { getExercise } from './exercises';
 import { RepCounter } from './counter';
 import {visibleLeg,calfLift,type Leg} from './calf';
+import {createRowMetric} from './row';
 export * from './angles';
 export * from './math';
 export * from './filter';
@@ -13,7 +14,8 @@ export * from './visibility';
 
 export function createTracker(exerciseId: string) {
   const exercise = getExercise(exerciseId);
-  let counter = new RepCounter(exercise.tracking);
+  const counterConfig=exercise.tracking.relative?{...exercise.tracking,enterAbove:exercise.tracking.relative.flexion,exitBelow:exercise.tracking.relative.returnWithin,enterBelow:undefined,exitAbove:undefined}:exercise.tracking;
+  let counter = new RepCounter(counterConfig),rowMetric=createRowMetric();
   const filters = new Map<string, OneEuroFilter>();
   let time = -Infinity, validTime = -Infinity;
   let baseline: number | null = null;
@@ -46,6 +48,7 @@ export function createTracker(exerciseId: string) {
         if(selected&&selected!==leg){baseline=null;calibration=[];counter.interrupt();leg=selected;}
         metric=calfLift(p,frame.width,frame.height,selected);
       }
+      if(exercise.tracking.relative&&frame.width>0&&frame.height>0)metric=rowMetric(result.angles,result.confidence,time,counter.phase==='ready');
       let calibrating = false;
       if (exercise.tracking.mode === 'baseline' && metric !== null) {
         if (baseline === null) {
@@ -71,6 +74,6 @@ export function createTracker(exerciseId: string) {
       output = {...result,missing, metric, reps: counter.reps, phase: counter.phase, feedback: missing.length?`Can't see your ${missing.join(' and ')} — adjust the camera.`:calibrating ? 'Stand still for one second to calibrate' : counter.feedback, lastRep: counter.lastRep};
       return output;
     },
-    reset() { counter = new RepCounter(exercise.tracking); filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; leg=null;output = {...empty(),missing:[], metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
+    reset() { counter = new RepCounter(counterConfig);rowMetric=createRowMetric(); filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; leg=null;output = {...empty(),missing:[], metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
   };
 }

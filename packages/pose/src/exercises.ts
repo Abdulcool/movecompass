@@ -7,6 +7,7 @@ export interface Tracking {
   enterBelow?: number; enterAbove?: number; exitAbove?: number; exitBelow?: number;
   minRepMs: number; targetRangeLabel: string; formChecks: FormCheck[];
   mode?: 'swing' | 'baseline';
+  relative?:{flexion:number;returnWithin:number};
 }
 export interface Exercise {
   id: string; name: string; group: 'upper-back' | 'shoulders' | 'hips' | 'legs';
@@ -43,8 +44,8 @@ export const exercises: Exercise[] = [
     description: 'Build supported pulling strength for posture and everyday reaching.',
     steps: ['Sit tall with the band looped safely around a sturdy anchor.', 'Pull elbows back toward your ribs without shrugging.', 'Pause, breathe out, and slowly return the band.'],
     safety: 'Use a light band. Keep both feet grounded and avoid holding your breath.', target: 'Mid-back', gif: 'seated-row.gif',
-    angleGuide: [{label: 'Elbow bend', target: 'Pull below 95°, return above 150°'}, {label: 'Shoulders', target: 'Level and relaxed'}],
-    tracking: {side: 'best', metric: (a, _p, _w, _h, c) => best(a.leftElbow, a.rightElbow, c?.leftElbow, c?.rightElbow), enterBelow: 95, exitAbove: 150, minRepMs: 800, targetRangeLabel: 'Pull, pause, then extend your arms', formChecks: []},
+    angleGuide: [{label: 'Elbow bend', target: 'Bend about 35° from your extended position, then return'}, {label: 'Shoulders', target: 'Level and relaxed'}],
+    tracking: {side: 'best', metric: (a, _p, _w, _h, c) => best(a.leftElbow, a.rightElbow, c?.leftElbow, c?.rightElbow), relative:{flexion:30,returnWithin:12},enterBelow: 95, exitAbove: 150, minRepMs: 800, targetRangeLabel: 'Pull, pause, then extend your arms', formChecks: []},
   },
   {
     id: 'pendulum', name: 'Shoulder pendulum', group: 'shoulders', goal: 'pain-relief', minutes: 4, sets: 2, reps: 8, difficulty: 'Gentle',

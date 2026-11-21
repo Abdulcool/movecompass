@@ -17,8 +17,8 @@ export function relevantJoints(id: string): Joint[] {
 }
 export function rangeProgress(metric: number | null, tracking: Tracking) {
   if (metric === null) return 0;
-  const home = tracking.exitAbove ?? tracking.exitBelow ?? 0;
-  const target = tracking.enterBelow ?? tracking.enterAbove ?? 1;
+  const home = tracking.relative?.returnWithin ?? tracking.exitAbove ?? tracking.exitBelow ?? 0;
+  const target = tracking.relative?.flexion ?? tracking.enterBelow ?? tracking.enterAbove ?? 1;
   return Math.max(0, Math.min(100, (100 * (metric - home)) / (target - home)));
 }
 export function angleSummary() {
