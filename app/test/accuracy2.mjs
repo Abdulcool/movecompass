@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {resolve} from 'node:path';
 const work=process.env.ACCURACY_WORK||'/home/ubuntu/work/accuracy2',mode=process.env.MODE||'after',rate=process.env.FPS||'15',base=process.env.APP_URL||'http://127.0.0.1:8091';
 const delegate=process.env.DELEGATE||'GPU',variant=delegate==='GPU'?mode:mode+'-'+delegate;
+const framing='uncropped-640-v1';
 if(!['GPU','CPU'].includes(delegate))throw new Error('DELEGATE must be GPU or CPU');
 const rows=JSON.parse(execFileSync('python3',['-c',`import csv,json;print(json.dumps(list(csv.DictReader(open('${work}/clips/clips.csv')))))`],{encoding:'utf8'}));
 rows.push(...[['squat','sit-to-stand',2],['press','wall-angels',1],['shoulder','wall-angels',2]].map(([name,exercise,true_reps])=>({file:`legacy/${name}.webm`,path:`/home/ubuntu/work/accuracy/${name}-bounded.webm`,exercise,true_reps})));
@@ -38,16 +39,16 @@ const results=[];let next=0;
 try{await Promise.all(Array.from({length:Number(process.env.WORKERS||3)},async()=>{
  while(next<specs.length){const row=specs[next++],id=row.file.replace(/\.[^.]+$/,'').replaceAll('/','--'),path=row.path||`${work}/clips/${row.file}`;
  const probe=JSON.parse(execFileSync('ffprobe',['-v','error','-select_streams','v:0','-show_entries','stream=avg_frame_rate,width,height:format=duration','-of','json',path],{encoding:'utf8'}));
- const [n,d]=probe.streams[0].avg_frame_rate.split('/').map(Number),fps=rate==='native'?n/d:Number(rate),folder=`${work}/frames-${rate}/${id}`,output=`${work}/${variant}-${rate}-${id}.json`;
+ const [n,d]=probe.streams[0].avg_frame_rate.split('/').map(Number),fps=rate==='native'?n/d:Number(rate),folder=`${work}/frames-${framing}-${rate}/${id}`,output=`${work}/${variant}-${framing}-${rate}-${id}.json`;
  try{const previous=JSON.parse(await readFile(output,'utf8'));results.push(previous.summary);console.log('CACHED '+JSON.stringify(previous.summary));continue;}catch{}
  await mkdir(folder,{recursive:true});
- if(!(await readdir(folder)).length)execFileSync('ffmpeg',['-y','-loglevel','error','-i',path,'-vf',`scale=640:-2,crop=iw:min(ih\\,720),scale=320:-2,fps=${fps}`,'-threads','1','-compression_level','1',folder+'/%05d.png']);
+ if(!(await readdir(folder)).length)execFileSync('ffmpeg',['-y','-loglevel','error','-i',path,'-vf',`scale=640:-2,fps=${fps}`,'-threads','1','-compression_level','1',folder+'/%05d.png']);
  const frames=(await readdir(folder)).filter(f=>f.endsWith('.png')).length;
  const page=await browser.newPage();await page.route('**/accuracy2/**',route=>route.fulfill({path:folder+'/'+new URL(route.request().url()).pathname.split('/').pop(),contentType:'image/png'}));
  await page.goto(base+'/healthz');await page.addScriptTag({type:'module',content:bundle.outputFiles[0].text});await page.waitForFunction(()=>typeof window.runAccuracy==='function');
  console.log('START '+mode+' '+rate+' '+row.file+' '+frames+' frames');
  const result=await page.evaluate(spec=>window.runAccuracy(spec),{id,file:row.file,exercise:row.exercise,frames,fps,delegate,baseline:mode==='baseline',assets:base+manifest.base,hint:row.file.includes('nia-group')?{x:.21,y:.43}:undefined});
- const summary={file:row.file,exercise:row.exercise,true:Number(row.true_reps),fps,frames,delegate,reps:result.traces.at(-1)?.reps||0};
+ const summary={file:row.file,exercise:row.exercise,true:Number(row.true_reps),fps,frames,delegate,framing,reps:result.traces.at(-1)?.reps||0};
  await writeFile(output,JSON.stringify({...result,summary}));results.push(summary);console.log(JSON.stringify(summary));await page.close();
  }
-}));await writeFile(`${work}/${variant}-${rate}-summary.json`,JSON.stringify(results,null,2));}finally{await browser.close();}
+}));await writeFile(`${work}/${variant}-${framing}-${rate}-summary.json`,JSON.stringify(results,null,2));}finally{await browser.close();}
