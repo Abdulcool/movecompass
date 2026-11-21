@@ -17,3 +17,13 @@ it('selects visibility, remains stable near a tie, and rejects empty or invalid 
   expect(calfLift([],640,480)).toBeNull();expect(calfLift(leg('left'),0,480)).toBeNull();
   const hidden=leg('left');hidden[27].presence=.1;expect(calfLift(hidden,640,480)).toBeNull();
 });
+it.each(['occlusion','geometry'])('recalibrates each heel/ankle source after %s without counting a stationary foot',reason=>{
+  const tracker=createTracker('calf-raise');let output;
+  for(let i=0;i<100;i++){
+    const p=leg('left',i>=55&&i<75?.035:0);
+    if(i>=18&&i<38){if(reason==='occlusion')p[29].visibility=0;else p[29].y=.95;}
+    output=tracker.update({landmarks:p,timestampMs:i*100,width:640,height:480});
+    if(i===50)expect(output.reps).toBe(0);
+  }
+  expect(output!.reps).toBe(1);
+});

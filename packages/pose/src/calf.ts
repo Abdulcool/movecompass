@@ -11,12 +11,15 @@ export function visibleLeg(p:Landmark[],previous:Leg|null=null):Leg|null{
   if(previous&&score(previous)>0&&Math.abs(left-right)<.15)return previous;
   return right>left?'right':'left';
 }
-export function calfLift(p:Landmark[],width:number,height:number,side:Leg|null=visibleLeg(p)){
+export function calfMeasurement(p:Landmark[],width:number,height:number,side:Leg|null=visibleLeg(p)){
   if(!side||!Number.isFinite(width)||!Number.isFinite(height)||width<=0||height<=0)return null;
   const [knee,ankle,heel,toe]=joints[side];
   if(![knee,ankle,toe].every(i=>visibleInFrame(p[i])))return null;
   const distance=(a:number,b:number)=>Math.hypot((p[a].x-p[b].x)*width,(p[a].y-p[b].y)*height),shin=distance(knee,ankle);
   if(!Number.isFinite(shin)||shin<=1e-8)return null;
   const foot=visibleInFrame(p[heel])&&distance(heel,ankle)<shin*.6?heel:ankle;
-  return (p[toe].y-p[foot].y)*height/shin;
+  return {value:(p[toe].y-p[foot].y)*height/shin,source:foot===heel?'heel':'ankle'};
+}
+export function calfLift(p:Landmark[],width:number,height:number,side:Leg|null=visibleLeg(p)){
+  return calfMeasurement(p,width,height,side)?.value??null;
 }

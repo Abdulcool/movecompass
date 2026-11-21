@@ -3,7 +3,7 @@ import {missingBodyParts} from './visibility';
 import { OneEuroFilter } from './filter';
 import { getExercise } from './exercises';
 import { RepCounter } from './counter';
-import {visibleLeg,calfLift,type Leg} from './calf';
+import {visibleLeg,calfMeasurement,type Leg} from './calf';
 import {createRowMetric} from './row';
 import {createHipShift} from './hip';
 import {createPendulum} from './pendulum';
@@ -22,7 +22,8 @@ export function createTracker(exerciseId: string) {
   let pendulum=exerciseId==='pendulum'?createPendulum():null;
   const filters = new Map<string, OneEuroFilter>();
   let time = -Infinity, validTime = -Infinity;
-  let baseline: number | null = null;
+  const baselines=new Map<string,number>();
+  let baselineKey=exerciseId;
   let calibration: {time: number; value: number}[] = [];
   let leg:Leg|null=null;
   const smooth = (points: Landmark[], prefix: string, timestamp: number) => points.map((p, i) => {
@@ -61,10 +62,15 @@ export function createTracker(exerciseId: string) {
         output={...result,missing,armReps:{left:0,right:0},...state,feedback:missing.length?`Can't see your ${missing.join(' and ')} — adjust the camera.`:state.feedback};
         return output;
       }
+      let baseline=baselines.get(baselineKey)??null,calfRaw:number|null=null;
       if(exerciseId==='calf-raise'){
         const selected=visibleLeg(p,leg);
-        if(selected&&selected!==leg){baseline=null;calibration=[];counter.interrupt();leg=selected;}
-        metric=calfLift(p,frame.width,frame.height,selected);
+        const raw=calfMeasurement(flatten(frame.landmarks),frame.width,frame.height,selected);
+        const reading=calfMeasurement(p,frame.width,frame.height,selected);
+        const key=raw?`${selected}:${raw.source}`:null;
+        if(key&&key!==baselineKey){baselineKey=key;baselines.delete(key);baseline=null;calibration=[];counter.interrupt();leg=selected;}
+        calfRaw=raw?.value??null;
+        metric=reading&&reading.source===raw?.source?reading.value:null;
       }
       if(exercise.tracking.relative&&frame.width>0&&frame.height>0)metric=rowMetric(result.angles,result.confidence,time,counter.phase==='ready');
       let calibrating = false;
@@ -72,7 +78,7 @@ export function createTracker(exerciseId: string) {
         if (baseline === null) {
           if (time - validTime > 500) calibration = [];
           const raw = extractAngles(frame);
-          const value = exerciseId==='calf-raise'?calfLift(flatten(frame.landmarks),frame.width,frame.height,leg):exercise.tracking.metric(raw.angles, flatten(frame.landmarks), frame.width, frame.height, raw.confidence);
+          const value = exerciseId==='calf-raise'?calfRaw:exercise.tracking.metric(raw.angles, flatten(frame.landmarks), frame.width, frame.height, raw.confidence);
           calibration = calibration.filter(s => time - s.time <= 1200);
           if (value !== null) calibration.push({time, value});
           const mean = calibration.reduce((sum,s)=>sum+s.value,0)/calibration.length;
@@ -80,6 +86,7 @@ export function createTracker(exerciseId: string) {
           if (calibration.length >= 10 && time - calibration[0].time >= 1000 && variance <= .000025) {
             const values = calibration.map(s => s.value).sort((a, b) => a - b);
             baseline = values.length % 2 ? values[Math.floor(values.length / 2)] : (values[values.length / 2 - 1] + values[values.length / 2]) / 2;
+            baselines.set(baselineKey,baseline);
           }
           calibrating = baseline === null;
         }
@@ -92,6 +99,6 @@ export function createTracker(exerciseId: string) {
       output = {...result,missing,armReps:{left:0,right:0}, metric, reps: counter.reps, phase: counter.phase, feedback: missing.length?`Can't see your ${missing.join(' and ')} — adjust the camera.`:calibrating ? 'Stand still for one second to calibrate' : counter.feedback, lastRep: counter.lastRep};
       return output;
     },
-    reset() { counter = new RepCounter(counterConfig);rowMetric=createRowMetric();hip=exerciseId==='hip-shift'?createHipShift(exercise.tracking):null;pendulum=exerciseId==='pendulum'?createPendulum():null; filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; leg=null;output = {...empty(),missing:[],armReps:{left:0,right:0}, metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
+    reset() { counter = new RepCounter(counterConfig);rowMetric=createRowMetric();hip=exerciseId==='hip-shift'?createHipShift(exercise.tracking):null;pendulum=exerciseId==='pendulum'?createPendulum():null; filters.clear(); time = validTime = -Infinity; baselines.clear();baselineKey=exerciseId; calibration = []; leg=null;output = {...empty(),missing:[],armReps:{left:0,right:0}, metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
   };
 }
