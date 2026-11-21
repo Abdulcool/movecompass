@@ -11,7 +11,7 @@ export default function Layout() {
         screenOptions={{
           headerStyle: { backgroundColor: colors.paper },
           headerTintColor: colors.ink,
-          headerTitle: ({children})=><View role="banner"><Text accessibilityRole="header" aria-level={2} style={{fontSize:18,fontWeight:'600',color:colors.ink}}>{children}</Text></View>,
+          headerTitle: ()=><View role="banner"><Text accessibilityRole="header" aria-level={2} style={{fontSize:18,fontWeight:'600',color:colors.ink}}>MoveCompass</Text></View>,
           contentStyle: { backgroundColor: colors.paper },
         }}
       >
