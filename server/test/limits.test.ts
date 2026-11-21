@@ -4,6 +4,24 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBackend } from '../src/backend';
+import bcrypt from 'bcrypt';
+it.each([true,false])('reserves pending password checks, then settles success=%s without leaking capacity',async(success)=>{
+  const dir=mkdtempSync(join(tmpdir(),'mc-rate-pending-')),b=createBackend({dataDir:dir,seedDemo:true});
+  const release:((value:boolean)=>void)[]=[];
+  const compare=vi.spyOn(bcrypt,'compare').mockImplementation(()=>new Promise<boolean>(resolve=>release.push(resolve)));
+  const send=()=>request(b.app).post('/api/auth/login').send({email:'janedoe@gmail.com',password:'123',role:'patient'});
+  const pending=Array.from({length:10},()=>send().then(r=>r.status));
+  try{
+    await vi.waitFor(()=>expect(release).toHaveLength(10));
+    await send().expect(429);expect(compare).toHaveBeenCalledTimes(10);
+    vi.spyOn(Date,'now').mockReturnValue(Date.now()+61000);
+    await send().expect(429);expect(compare).toHaveBeenCalledTimes(10);
+    release.forEach(resolve=>resolve(success));
+    expect(await Promise.all(pending)).toEqual(Array(10).fill(success?200:401));
+    compare.mockImplementation(()=>Promise.resolve(success));
+    await send().expect(success?200:429);
+  }finally{release.forEach(resolve=>resolve(success));await Promise.all(pending);vi.restoreAllMocks();await b.close();rmSync(dir,{recursive:true});}
+});
 it('limits failed login per account/IP and registration/pairing per IP',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'mc-rate-'));const b=createBackend({dataDir:dir});
   try {

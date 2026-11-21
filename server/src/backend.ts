@@ -134,20 +134,30 @@ export function createBackend(options: Options = {}) {
   const proxyHops=options.trustProxy??Number(process.env.TRUST_PROXY??0);
   if(!Number.isSafeInteger(proxyHops)||proxyHops<0)throw new Error('TRUST_PROXY must be a nonnegative number of trusted proxy hops');
   app.set('trust proxy',proxyHops);
-  const attempts = new Map<string, {count: number; expires: number}>();
+  const attempts = new Map<string, {count: number; pending:number; expires: number}>();
   const throttle = (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now();
-    for (const [key, value] of attempts) if (value.expires <= now) attempts.delete(key);
+    for (const [key, value] of attempts) if (value.expires <= now) {
+      if(value.pending){value.count=0;value.expires=now+60000;}else attempts.delete(key);
+    }
     const path=req.originalUrl.split('?')[0].toLowerCase().replace(/\/+$/, '');
     const login=path==='/api/auth/login',address=`${path}:${req.ip}`;
     const emailKey=object(req.body)&&typeof req.body.email==='string'?req.body.email.trim().toLowerCase():'<invalid>';
     const key = login?`${address}:${emailKey}`:address;
-    const bucket = attempts.get(key) ?? {count: 0, expires: now + 60000};
+    const bucket = attempts.get(key) ?? {count: 0, pending:0, expires: now + 60000};
     attempts.set(key, bucket);
-    const ipBucket=attempts.get(address)??{count:0,expires:now+60000};
+    const ipBucket=attempts.get(address)??{count:0,pending:0,expires:now+60000};
     if(login)attempts.set(address,ipBucket);
-    if (login?bucket.count>=10||ipBucket.count>=100:++bucket.count>10) { res.set('Retry-After', String(Math.ceil(((login&&ipBucket.count>=100?ipBucket:bucket).expires - now) / 1000))).status(429).json({error: 'Too many attempts. Please wait a minute and try again.'}); return; }
-    if(login)res.once('finish',()=>{if(res.statusCode>=400){bucket.count++;ipBucket.count++;}});
+    const ipLimited=login&&ipBucket.count+ipBucket.pending>=100;
+    if (login?bucket.count+bucket.pending>=10||ipLimited:++bucket.count>10) { res.set('Retry-After', String(Math.ceil(((ipLimited?ipBucket:bucket).expires - now) / 1000))).status(429).json({error: 'Too many attempts. Please wait a minute and try again.'}); return; }
+    if(login){
+      bucket.pending++;ipBucket.pending++;let settled=false;
+      res.locals.loginAttempt=(failed:boolean)=>{
+        if(settled)return;settled=true;bucket.pending--;ipBucket.pending--;
+        if(failed){bucket.count++;ipBucket.count++;}
+      };
+      res.once('finish',()=>res.locals.loginAttempt(res.statusCode>=400));
+    }
     next();
   };
   app.use(['/api/auth/login', '/api/auth/register', '/api/devices/pair', '/api/devices/recover'], throttle);
@@ -256,12 +266,14 @@ export function createBackend(options: Options = {}) {
     res.status(201).json({token: tokenFor(user, user.role), user: publicUser(user)});
   });
   app.post('/api/auth/login', async (req, res) => {
-    const b = req.body;
-    if (!object(b) || !email(b.email) || typeof b.password !== 'string' || typeof b.role !== 'string' || !['patient', 'staff'].includes(b.role)) { res.status(400).json({errors: ['Enter your email and password, and choose Patient or CCCARE staff']}); return; }
-    const user = byEmail(b.email);
-    if (!user || !(await bcrypt.compare(b.password, user.password_hash))) { res.status(401).json({error: "Email or password isn't right. Please try again."}); return; }
-    if (user.role !== b.role) { res.status(401).json({error: b.role === 'staff' ? "This account isn't a staff account." : 'This is a staff account. Choose CCCARE staff.'}); return; }
-    const role = b.role as Role; res.json({token: tokenFor(user, role), user: publicUser(user, role)});
+    try{
+      const b = req.body;
+      if (!object(b) || !email(b.email) || typeof b.password !== 'string' || typeof b.role !== 'string' || !['patient', 'staff'].includes(b.role)) { res.status(400).json({errors: ['Enter your email and password, and choose Patient or CCCARE staff']}); return; }
+      const user = byEmail(b.email);
+      if (!user || !(await bcrypt.compare(b.password, user.password_hash))) { res.status(401).json({error: "Email or password isn't right. Please try again."}); return; }
+      if (user.role !== b.role) { res.status(401).json({error: b.role === 'staff' ? "This account isn't a staff account." : 'This is a staff account. Choose CCCARE staff.'}); return; }
+      const role = b.role as Role; res.json({token: tokenFor(user, role), user: publicUser(user, role)});
+    }finally{res.locals.loginAttempt?.(res.statusCode>=400);}
   });
   app.get('/api/me', auth, (_req, res) => { const u = identity(res); res.json({user: publicUser(byId(u.id)!, u.role)}); });
   app.post('/api/devices/pair', (req,res)=>{
