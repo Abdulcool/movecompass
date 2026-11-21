@@ -5,6 +5,7 @@ import { getExercise } from './exercises';
 import { RepCounter } from './counter';
 import {visibleLeg,calfLift,type Leg} from './calf';
 import {createRowMetric} from './row';
+import {createHipShift} from './hip';
 export * from './angles';
 export * from './math';
 export * from './filter';
@@ -16,6 +17,7 @@ export function createTracker(exerciseId: string) {
   const exercise = getExercise(exerciseId);
   const counterConfig=exercise.tracking.relative?{...exercise.tracking,enterAbove:exercise.tracking.relative.flexion,exitBelow:exercise.tracking.relative.returnWithin,enterBelow:undefined,exitAbove:undefined}:exercise.tracking;
   let counter = new RepCounter(counterConfig),rowMetric=createRowMetric();
+  let hip=exerciseId==='hip-shift'?createHipShift(exercise.tracking):null;
   const filters = new Map<string, OneEuroFilter>();
   let time = -Infinity, validTime = -Infinity;
   let baseline: number | null = null;
@@ -43,6 +45,13 @@ export function createTracker(exerciseId: string) {
       const world = smooth(flatten(frame.worldLandmarks), 'w', time);
       const result = extractAngles({...frame, landmarks: p, worldLandmarks: world});
       let metric = frame.width > 0 && frame.height > 0 ? exercise.tracking.metric(result.angles, p, frame.width, frame.height, result.confidence) : null;
+      if(hip){
+        const missing=missingBodyParts(exerciseId,p);
+        const form=metric===null||missing.length?'':exercise.tracking.formChecks.find(check=>check.test(result.angles))?.message??'';
+        const state=hip.update(metric,p,frame.width,frame.height,time,form);
+        output={...result,missing,...state,feedback:missing.length?`Can't see your ${missing.join(' and ')} — adjust the camera.`:state.feedback};
+        return output;
+      }
       if(exerciseId==='calf-raise'){
         const selected=visibleLeg(p,leg);
         if(selected&&selected!==leg){baseline=null;calibration=[];counter.interrupt();leg=selected;}
@@ -74,6 +83,6 @@ export function createTracker(exerciseId: string) {
       output = {...result,missing, metric, reps: counter.reps, phase: counter.phase, feedback: missing.length?`Can't see your ${missing.join(' and ')} — adjust the camera.`:calibrating ? 'Stand still for one second to calibrate' : counter.feedback, lastRep: counter.lastRep};
       return output;
     },
-    reset() { counter = new RepCounter(counterConfig);rowMetric=createRowMetric(); filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; leg=null;output = {...empty(),missing:[], metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
+    reset() { counter = new RepCounter(counterConfig);rowMetric=createRowMetric();hip=exerciseId==='hip-shift'?createHipShift(exercise.tracking):null; filters.clear(); time = validTime = -Infinity; baseline = null; calibration = []; leg=null;output = {...empty(),missing:[], metric: null, reps: 0, phase: counter.phase, feedback: counter.feedback, lastRep: null}; },
   };
 }
