@@ -22,6 +22,14 @@ privacy and the complete system have been reviewed for patient use.
 7. Slow LED blink means connecting; LED off means connected. Staff sees Online.
    Complete one set as the patient: five quick flashes, then a three-second hold.
 
+Pairing and credential recovery first wake `/healthz`, retrying with 1–8 second
+backoff for about 90 seconds. Slow blinking during this wait is normal on Render
+Free. Only after a healthy response is the credential POST sent (15-second
+timeout). Pairing POSTs are never automatically retried: a lost response may
+mean the single-use code was consumed. Request a fresh code after an ambiguous
+POST failure. If waking fails, the code was not sent and can still be used until
+it expires. The reopened setup page shows the last failure reason until reboot.
+
 WiFi/pairing are remembered in LittleFS. To change setup, tap RESET, release it,
 then **immediately hold FLASH for five seconds**. Do not hold FLASH during reset:
 GPIO0 also selects the serial bootloader. Configure the open setup AP in a trusted
@@ -123,14 +131,19 @@ separate queued flashes**. Keys stay in memory and are not printed. Push sending
 is stubbed. Manual simulation takes `BACKEND_URL`, `DEVICE_ID`, `DEVICE_KEY` and
 `PATIENT_ID` from the process environment. Node verifies TLS by default;
 `INSECURE_TLS=true` reproduces only the board's demo behavior.
+Simulator tests mock a 60-second sleeping health endpoint, bound failed wake-up
+to 90 seconds, and verify that an ambiguous pairing POST is not retried. These
+are protocol simulations, not execution of the sketch on physical hardware.
 
 ## Troubleshooting
 
 - **No USB port:** close serial apps, use a data cable and install the right driver.
 - **No setup page:** join MoveCompass-Setup and open 192.168.4.1.
-- **Pairing fails:** check the URL and ask staff for a fresh 15-minute code.
+- **Pairing fails:** read the last failure on the reopened setup page. A wake-up
+  failure does not send the code; a failed POST may consume it and needs a fresh
+  15-minute code from staff.
 - **WiFi fails:** use 2.4 GHz and avoid WiFi networks requiring browser login.
-- **Slow blink:** wait about one minute for a sleeping server. Check DNS, firewall,
+- **Slow blink:** allow about 90 seconds to wake a sleeping server. Check DNS, firewall,
   port, HTTPS settings and `/ws` proxy upgrades if it persists.
 - **Online but no flash:** complete a set as the registered patient. Names and
   source-device IDs are not identity matches; other patients are not delivered.
