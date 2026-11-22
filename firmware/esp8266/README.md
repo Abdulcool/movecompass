@@ -17,7 +17,7 @@ privacy and the complete system have been reviewed for patient use.
 5. The LED blinks quickly. Join **MoveCompass-Setup** WiFi on your phone. Stay
    connected even if it says “No internet”. Open **http://192.168.4.1** if needed.
 6. Choose home WiFi, enter its password, paste the server URL shown by the flasher
-   (e.g. `https://your-service.onrender.com`) and enter the pairing code. Save.
+   (default `https://movecompass.onrender.com`) and enter the pairing code. Save.
    No code editing, patient-ID copying or secret-key copying is needed.
 7. Slow LED blink means connecting; LED off means connected. Staff sees Online.
    Complete one set as the patient: five quick flashes, then a three-second hold.
@@ -29,6 +29,25 @@ timeout). Pairing POSTs are never automatically retried: a lost response may
 mean the single-use code was consumed. Request a fresh code after an ambiguous
 POST failure. If waking fails, the code was not sent and can still be used until
 it expires. The reopened setup page shows the last failure reason until reboot.
+
+If a public hostname was entered with `http://`, a 301/302/307/308 health redirect
+to HTTPS on the same host (standard port 443) upgrades the backend before pairing
+or recovery. A fresh HTTPS health check must succeed first; POSTs are never
+redirected or retried. The upgraded URL is saved with the successful setup or
+recovery and is also used for secure WebSockets. IP addresses, local hostnames,
+cross-host redirects and nonstandard HTTPS ports are not upgraded automatically.
+Failures retain the last HTTP status and a redirect hint. The old
+`http://movecompass.local:8080` placeholder is replaced with the Render default
+when prefilling the portal; other saved/custom server addresses remain editable.
+
+The setup manager and its parameters are destroyed before waking/pairing; the
+soft AP is explicitly disabled and WiFi is STA-only during HTTPS. BearSSL keeps
+its full 16 KB receive buffer (no reduced-fragment assumption). Serial at
+115200 baud prints heap/max-free-block before each request, then HTTP status,
+HTTPClient error text, TLS error code/text and heap/max-free-block on failure.
+These diagnostics are captured before closing the TLS client, also for recovery.
+The reopened portal shows a shorter, HTML-escaped version of the last failure.
+Request bodies, pairing codes, keys and WiFi passwords are not logged.
 
 WiFi/pairing are remembered in LittleFS. To change setup, tap RESET, release it,
 then **immediately hold FLASH for five seconds**. Do not hold FLASH during reset:
@@ -88,7 +107,11 @@ The envelope is `{kind:"event",event:{id,seq,type:"exercise_completed",patientId
 patientName,exerciseId,exerciseName,reps,source,transport,completedAt,deviceId,
 angles,setNumber,totalSets}}`. Each matching set is logged to Serial and flashes
 GPIO2 **5 × (100 ms on / 100 ms off)**, then holds ON **3 seconds**. A buzzer
-follows all ON periods. Network/TLS handshakes can briefly delay LED/button timing.
+follows all ON periods. A 100 ms SDK-context Ticker drives these GPIO phases even
+when the main loop is busy with TLS or cursor writes. Its callback only changes
+GPIO and a phase counter; finishing, delivery acknowledgement, cursor persistence
+and queue advancement remain in the main loop. The ACK button is still polled,
+so blocking network work can delay recognizing a press or starting the next alert.
 
 Missed sets replay in sequence. The server holds one unacknowledged set per board;
 the board queues alerts and sends `{kind:"ack",seq}` only after the full pattern
@@ -133,7 +156,10 @@ is stubbed. Manual simulation takes `BACKEND_URL`, `DEVICE_ID`, `DEVICE_KEY` and
 `INSECURE_TLS=true` reproduces only the board's demo behavior.
 Simulator tests mock a 60-second sleeping health endpoint, bound failed wake-up
 to 90 seconds, and verify that an ambiguous pairing POST is not retried. These
-are protocol simulations, not execution of the sketch on physical hardware.
+also check preservation of the last health failure and deadline expiry before a
+request, safe HTTPS upgrades, rejected redirects and the upgraded pairing URL.
+They are protocol simulations, not execution of the sketch on physical
+hardware; heap exhaustion and portal teardown need a real-board retest.
 
 ## Troubleshooting
 

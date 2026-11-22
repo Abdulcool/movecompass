@@ -3,43 +3,65 @@ import { EventEmitter } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { isIP } from 'node:net';
 
 function healthStatus(url,{insecureTls,timeoutMs}) {
   return new Promise((resolve,reject)=>{
     const req=(url.protocol==='https:'?httpsRequest:httpRequest)(url,{rejectUnauthorized:!insecureTls},res=>{
-      clearTimeout(timer);res.resume();resolve(res.statusCode);
+      clearTimeout(timer);res.resume();resolve({status:res.statusCode,location:res.headers.location});
     });
     const timer=setTimeout(()=>req.destroy(new Error('Health check timed out')),timeoutMs);
     req.on('error',error=>{clearTimeout(timer);reject(error);});req.end();
   });
 }
 
+function httpsUpgrade(url,location) {
+  if(url.protocol!=='http:'||typeof location!=='string'||!location.startsWith('https://')||location.length>512)return;
+  const host=url.hostname;
+  if(isIP(host)||host.includes(':')||!host.includes('.')||['.local','.localhost','.lan','.home','.home.arpa','.internal'].some(suffix=>host.endsWith(suffix)))return;
+  let target;try{target=new URL(location);}catch{return;}
+  if(target.hostname!==host||target.port||target.username||target.password)return;
+  return new URL('/healthz',target.origin);
+}
+
+const healthRedirect=status=>[301,302,307,308].includes(status);
+
 export async function wakeServer({backendUrl,insecureTls=false,now=Date.now,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),getStatus=healthStatus}) {
-  const url=new URL('/healthz',backendUrl);
+  let url=new URL('/healthz',backendUrl);
   if(!['http:','https:'].includes(url.protocol))throw new Error('Use an HTTP(S) backend address');
-  const started=now();let backoff=1000;
-  while(now()-started<90000){
-    try{if(await getStatus(url,{insecureTls,timeoutMs:Math.min(10000,90000-(now()-started))})===200)return;}catch{}
+  const started=now();let backoff=1000,lastFailure='';
+  for(;;){
+    const elapsed=now()-started;if(elapsed>=90000)break;
+    try{
+      const response=await getStatus(url,{insecureTls,timeoutMs:Math.min(10000,90000-elapsed)});
+      const status=typeof response==='number'?response:response.status;
+      if(status===200)return url.origin;
+      lastFailure=`Health HTTP=${status}${healthRedirect(status)?' redirect; use https:// if upgrade fails':''}`;
+      const upgraded=healthRedirect(status)&&httpsUpgrade(url,response.location);
+      if(upgraded){url=upgraded;continue;}
+    }catch(error){lastFailure=`Health request failed (${error?.code||'network error'})`;}
     const remaining=90000-(now()-started);if(remaining<=0)break;
     await wait(Math.min(backoff,remaining));backoff=Math.min(backoff*2,8000);
   }
-  throw new Error('Server did not wake within 90 seconds; no pairing code was sent');
+  throw new Error(`Server did not wake within 90 seconds; no pairing code was sent. ${lastFailure}`);
 }
 
-export async function pairWithCode({backendUrl,code,insecureTls=false,wakeOptions={}}) {
-  if(!/^\d{6}$/.test(code||''))throw new Error('Enter a six-digit pairing code');
-  const url=new URL('/api/devices/pair',backendUrl);
-  if(!['http:','https:'].includes(url.protocol))throw new Error('Use an HTTP(S) backend address');
-  await wakeServer({...wakeOptions,backendUrl,insecureTls});
-  const body=JSON.stringify({code});
-  const data=await new Promise((resolve,reject)=>{
+function postCredentials(url,body,{insecureTls}) {
+  return new Promise((resolve,reject)=>{
     const req=(url.protocol==='https:'?httpsRequest:httpRequest)(url,{method:'POST',rejectUnauthorized:!insecureTls,headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}},res=>{
       let text='';res.on('data',chunk=>{text+=chunk;if(text.length>8192)req.destroy(new Error('Pairing response too large'));});
       res.on('end',()=>{if(res.statusCode!==200){reject(new Error(`Pairing failed (HTTP ${res.statusCode}); request a fresh code`));return;}try{resolve(JSON.parse(text));}catch{reject(new Error('Invalid pairing response'));}});
     });req.on('error',reject);req.setTimeout(15000,()=>req.destroy(new Error('Pairing timed out; code may have been used, request a fresh code')));req.end(body);
   });
+}
+
+export async function pairWithCode({backendUrl,code,insecureTls=false,wakeOptions={},post=postCredentials}) {
+  if(!/^\d{6}$/.test(code||''))throw new Error('Enter a six-digit pairing code');
+  const healthyBackend=await wakeServer({...wakeOptions,backendUrl,insecureTls});
+  const url=new URL('/api/devices/pair',healthyBackend);
+  const data=await post(url,JSON.stringify({code}),{insecureTls});
   if(typeof data.deviceId!=='string'||!data.deviceId||typeof data.patientId!=='string'||!data.patientId||!validDeviceKey(data.key))throw new Error('Invalid device credentials');
-  return {deviceId:data.deviceId,deviceKey:data.key,patientId:data.patientId};
+  return {backendUrl:url.origin,deviceId:data.deviceId,deviceKey:data.key,patientId:data.patientId};
 }
 
 export function validDeviceKey(key) {

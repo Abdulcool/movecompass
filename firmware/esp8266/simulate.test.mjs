@@ -39,7 +39,7 @@ test('waits through a mocked 60-second cold start before consuming the code once
 test('bounds unhealthy-server retries at 90 seconds without sending the code',async t=>{
   let elapsed=0,posts=0;
   const backendUrl=await pairingServer(t,(req,res)=>{posts++;res.end();});
-  await assert.rejects(pairWithCode({backendUrl,code:'123456',wakeOptions:{now:()=>elapsed,wait:async ms=>{elapsed+=ms;},getStatus:async()=>503}}),/no pairing code was sent/);
+  await assert.rejects(pairWithCode({backendUrl,code:'123456',wakeOptions:{now:()=>elapsed,wait:async ms=>{elapsed+=ms;},getStatus:async()=>503}}),/no pairing code was sent\. Health HTTP=503/);
   assert.equal(elapsed,90000);assert.equal(posts,0);
 });
 
@@ -47,6 +47,52 @@ test('retries transient health errors with capped backoff',async()=>{
   let elapsed=0,calls=0;const waits=[];
   await wakeServer({backendUrl:'http://localhost',now:()=>elapsed,wait:async ms=>{waits.push(ms);elapsed+=ms;},getStatus:async()=>{calls++;if(calls===1)throw new Error('Connection refused');return calls<7?503:200;}});
   assert.deepEqual(waits,[1000,2000,4000,8000,8000,8000]);
+});
+
+test('preserves the last transport error code without exposing its message',async()=>{
+  let elapsed=0;
+  await assert.rejects(wakeServer({backendUrl:'http://localhost',now:()=>elapsed,wait:async ms=>{elapsed+=ms;},getStatus:async()=>{
+    throw Object.assign(new Error('sensitive connection details'),{code:'ECONNRESET'});
+  }}),error=>{assert.match(error.message,/ECONNRESET/);assert.doesNotMatch(error.message,/sensitive/);return true;});
+});
+
+test('does not start a zero-timeout request when the wake deadline has passed',async()=>{
+  let reads=0,calls=0;
+  await assert.rejects(wakeServer({backendUrl:'http://localhost',now:()=>reads++===0?0:90000,getStatus:async()=>{calls++;return 200;}}),/90 seconds/);
+  assert.equal(calls,0);
+});
+
+for(const status of [301,302,307,308])test(`upgrades same-host HTTP ${status} to HTTPS before sending one code`,async()=>{
+  const checks=[];let posts=0;
+  const paired=await pairWithCode({backendUrl:'http://example.com',code:'123456',wakeOptions:{getStatus:async url=>{
+    checks.push(url.href);
+    return checks.length===1?{status,location:'https://EXAMPLE.com:443/healthz'}:200;
+  }},post:async(url,body)=>{
+    assert.deepEqual(checks,['http://example.com/healthz','https://example.com/healthz']);
+    assert.equal(url.href,'https://example.com/api/devices/pair');assert.equal(JSON.parse(body).code,'123456');posts++;
+    return {deviceId:'board',patientId:'patient',key:'a'.repeat(64)};
+  }});
+  assert.equal(posts,1);assert.equal(paired.backendUrl,'https://example.com');
+});
+
+for(const [backendUrl,location] of [
+  ['http://example.com','https://other.example/healthz'],
+  ['http://example.com','https://user@example.com/healthz'],
+  ['http://example.com','https://example.com:8443/healthz'],
+  ['http://example.com','http://example.com/healthz'],
+  ['http://example.com','/healthz'],
+  ['http://example.com',''],
+  ['http://192.168.1.2','https://192.168.1.2/healthz'],
+  ['http://localhost','https://localhost/healthz'],
+  ['http://device.local','https://device.local/healthz'],
+  ['http://device.lan','https://device.lan/healthz'],
+  ['https://example.com','https://example.com/healthz'],
+])test(`does not follow unsafe/local redirect ${backendUrl} → ${location||'empty'}`,async()=>{
+  let elapsed=0,posts=0,checks=0;
+  await assert.rejects(pairWithCode({backendUrl,code:'123456',wakeOptions:{now:()=>elapsed,wait:async()=>{elapsed=90000;},getStatus:async url=>{
+    checks++;assert.equal(url.origin,backendUrl);return {status:308,location};
+  }},post:async()=>{posts++;}}),/HTTP=308 redirect; use https:\/\//);
+  assert.equal(checks,1);assert.equal(posts,0);
 });
 
 test('does not retry an ambiguously failed single-use POST',async t=>{

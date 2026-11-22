@@ -1,6 +1,6 @@
 #pragma once
 
-constexpr char DEFAULT_BACKEND_URL[] = "http://movecompass.local:8080";
+constexpr char DEFAULT_BACKEND_URL[] = "https://movecompass.onrender.com";
 
 constexpr int LED_PIN = 2;
 constexpr int BUZZER_PIN = -1;  // -1 disables the optional active buzzer.
