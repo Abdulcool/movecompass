@@ -4,16 +4,39 @@ import { pathToFileURL } from 'node:url';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
-export async function pairWithCode({backendUrl,code,insecureTls=false}) {
+function healthStatus(url,{insecureTls,timeoutMs}) {
+  return new Promise((resolve,reject)=>{
+    const req=(url.protocol==='https:'?httpsRequest:httpRequest)(url,{rejectUnauthorized:!insecureTls},res=>{
+      clearTimeout(timer);res.resume();resolve(res.statusCode);
+    });
+    const timer=setTimeout(()=>req.destroy(new Error('Health check timed out')),timeoutMs);
+    req.on('error',error=>{clearTimeout(timer);reject(error);});req.end();
+  });
+}
+
+export async function wakeServer({backendUrl,insecureTls=false,now=Date.now,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),getStatus=healthStatus}) {
+  const url=new URL('/healthz',backendUrl);
+  if(!['http:','https:'].includes(url.protocol))throw new Error('Use an HTTP(S) backend address');
+  const started=now();let backoff=1000;
+  while(now()-started<90000){
+    try{if(await getStatus(url,{insecureTls,timeoutMs:Math.min(10000,90000-(now()-started))})===200)return;}catch{}
+    const remaining=90000-(now()-started);if(remaining<=0)break;
+    await wait(Math.min(backoff,remaining));backoff=Math.min(backoff*2,8000);
+  }
+  throw new Error('Server did not wake within 90 seconds; no pairing code was sent');
+}
+
+export async function pairWithCode({backendUrl,code,insecureTls=false,wakeOptions={}}) {
   if(!/^\d{6}$/.test(code||''))throw new Error('Enter a six-digit pairing code');
   const url=new URL('/api/devices/pair',backendUrl);
   if(!['http:','https:'].includes(url.protocol))throw new Error('Use an HTTP(S) backend address');
+  await wakeServer({...wakeOptions,backendUrl,insecureTls});
   const body=JSON.stringify({code});
   const data=await new Promise((resolve,reject)=>{
     const req=(url.protocol==='https:'?httpsRequest:httpRequest)(url,{method:'POST',rejectUnauthorized:!insecureTls,headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}},res=>{
       let text='';res.on('data',chunk=>{text+=chunk;if(text.length>8192)req.destroy(new Error('Pairing response too large'));});
       res.on('end',()=>{if(res.statusCode!==200){reject(new Error(`Pairing failed (HTTP ${res.statusCode}); request a fresh code`));return;}try{resolve(JSON.parse(text));}catch{reject(new Error('Invalid pairing response'));}});
-    });req.on('error',reject);req.setTimeout(12000,()=>req.destroy(new Error('Pairing timed out')));req.end(body);
+    });req.on('error',reject);req.setTimeout(15000,()=>req.destroy(new Error('Pairing timed out; code may have been used, request a fresh code')));req.end(body);
   });
   if(typeof data.deviceId!=='string'||!data.deviceId||typeof data.patientId!=='string'||!data.patientId||!validDeviceKey(data.key))throw new Error('Invalid device credentials');
   return {deviceId:data.deviceId,deviceKey:data.key,patientId:data.patientId};

@@ -15,6 +15,7 @@
 WebSocketsClient socketClient;
 Ticker portalLed;
 String backendUrl, backendHost, deviceId, deviceKey, patientId, wifiSsid, wifiPassword;
+String credentialError;
 uint16_t backendPort = 80;
 bool backendTls = false;
 bool wifiConnected = false, wifiAttempt = false, backendConnected = false;
@@ -94,17 +95,53 @@ bool saveConfig() {
   return written == expected && LittleFS.rename("/config.tmp", "/config.json");
 }
 
+bool wakeBackend() {
+  const uint32_t started = millis();
+  uint32_t backoff = 1000;
+  for (;;) {
+    const uint32_t attemptElapsed = millis() - started;
+    if (attemptElapsed >= 90000) break;
+    if (WiFi.status() != WL_CONNECTED) { credentialError = "WiFi disconnected. Check the WiFi password and signal."; return false; }
+    const uint32_t remaining = 90000 - attemptElapsed;
+    WiFiClient plain; BearSSL::WiFiClientSecure secure;
+    secure.setInsecure();
+    WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
+    client.setTimeout(min(remaining, static_cast<uint32_t>(10000)));
+    HTTPClient http; http.setTimeout(min(remaining, static_cast<uint32_t>(10000)));
+    int status = -1;
+    if (http.begin(client, backendUrl + "/healthz")) status = http.GET();
+    http.end(); yield();
+    if (status == 200) return true;
+    const uint32_t elapsed = millis() - started;
+    if (elapsed >= 90000) break;
+    delay(min(backoff, 90000 - elapsed));
+    backoff = min(backoff * 2, static_cast<uint32_t>(8000));
+  }
+  credentialError = "Server did not wake within 90 seconds. Check the server address and try again; no pairing code was sent.";
+  return false;
+}
+
 int credentialRequest(const char *path, const String &body) {
-  if (!parseBackend()) return -1;
+  credentialError = "";
+  if (!parseBackend()) { credentialError = "Use a valid http:// or https:// server address without a path."; return -1; }
+  Ticker waitingLed;
+  waitingLed.attach_ms(1000, []() { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); });
+  Serial.println("Waking server; allow up to 90 seconds (slow blink)");
+  if (!wakeBackend()) return -1;
   WiFiClient plain; BearSSL::WiFiClientSecure secure;
   secure.setInsecure();
   WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
-  HTTPClient http; http.setTimeout(12000);
-  if (!http.begin(client, backendUrl + path)) return -1;
+  client.setTimeout(15000);
+  HTTPClient http; http.setTimeout(15000);
+  if (!http.begin(client, backendUrl + path)) { credentialError = "Could not open the server connection. Request a fresh pairing code before retrying."; return -1; }
   http.addHeader("Content-Type", "application/json");
   const int status = http.POST(body);
-  if (status != 200) { http.end(); return status; }
+  if (status != 200) {
+    credentialError = status < 0 ? "Server request failed or timed out. The code may have been used; request a fresh code before retrying." : "Server rejected the request (HTTP " + String(status) + "). Check the address and request a fresh pairing code.";
+    http.end(); return status;
+  }
   const String response = http.getString(); http.end();
+  credentialError = "Invalid server response. The code may have been used; request a fresh pairing code.";
   if (response.length() > 2048) return -1;
   JsonDocument doc;
   if (deserializeJson(doc, response)) return -1;
@@ -116,10 +153,12 @@ int credentialRequest(const char *path, const String &body) {
     LittleFS.remove("/cursor.json"); outputs(false, false);
   }
   deviceId = nextId; deviceKey = nextKey; patientId = nextPatient;
+  credentialError = "";
   return 200;
 }
 
 bool pairDevice(const String &code) {
+  credentialError = "Enter a six-digit pairing code from your care team.";
   if (code.length() != 6) return false;
   for (unsigned int i = 0; i < code.length(); i++) if (!isDigit(code[i])) return false;
   JsonDocument request; request["code"] = code; String body; serializeJson(request, body);
@@ -144,23 +183,28 @@ bool setupButtonHeld() {
 }
 
 void configurePortal() {
-  portalLed.attach_ms(100, []() { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); });
   for (;;) {
+    portalLed.attach_ms(100, []() { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); });
     const String previousBackend = backendUrl;
     WiFiManager manager; manager.setDebugOutput(false); manager.setTitle("MoveCompass setup");
     manager.setBreakAfterConfig(true); manager.setConnectTimeout(25);
     WiFiManagerParameter server("backend", "MoveCompass server address", backendUrl.length() ? backendUrl.c_str() : DEFAULT_BACKEND_URL, 199);
     WiFiManagerParameter code("code", "Six-digit pairing code (blank to keep current pairing)", "", 7, "inputmode='numeric' pattern='[0-9]{6}' maxlength='6'");
     WiFiManagerParameter info("<p>Use your home 2.4 GHz WiFi. Copy the server address and pairing code from your care team. Codes last 15 minutes. Demo TLS does not verify certificates.</p>");
+    const String failureHtml = credentialError.length() ? "<p role='alert'>Last setup attempt: " + credentialError + "</p>" : "";
+    WiFiManagerParameter failure(failureHtml.c_str());
     manager.addParameter(&server); manager.addParameter(&code); manager.addParameter(&info);
+    if (failureHtml.length()) manager.addParameter(&failure);
     Serial.println("Setup WiFi: MoveCompass-Setup; open http://192.168.4.1");
-    if (!manager.startConfigPortal("MoveCompass-Setup") || WiFi.status() != WL_CONNECTED) continue;
+    if (!manager.startConfigPortal("MoveCompass-Setup") || WiFi.status() != WL_CONNECTED) { credentialError = "Could not connect to WiFi. Check the password and use a 2.4 GHz network."; continue; }
+    portalLed.detach();
     backendUrl = server.getValue();
     const String pairing = code.getValue();
     const bool keep = !pairing.length() && validDeviceKey(deviceKey) && previousBackend == backendUrl;
-    if (!parseBackend() || (!keep && !pairDevice(pairing))) { Serial.println("Pairing failed: check server address and request a fresh code"); continue; }
+    if (!parseBackend()) { credentialError = "Use a valid http:// or https:// server address without a path."; continue; }
+    if (!keep && !pairDevice(pairing)) { Serial.println(credentialError); continue; }
     wifiSsid = WiFi.SSID(); wifiPassword = WiFi.psk();
-    if (!saveConfig()) { Serial.println("Could not save setup; request a fresh pairing code and try again"); continue; }
+    if (!saveConfig()) { credentialError = "Could not save setup. Request a fresh pairing code and try again."; Serial.println(credentialError); continue; }
     Serial.println("Setup saved; connecting to care team"); break;
   }
   portalLed.detach(); outputs(false, false);
