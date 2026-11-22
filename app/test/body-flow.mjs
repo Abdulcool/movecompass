@@ -1,0 +1,64 @@
+import { chromium, expect } from "@playwright/test";
+import assert from "node:assert/strict";
+const base = process.env.APP_URL || "http://127.0.0.1:18083";
+const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-swiftshader"] });
+const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } });
+const errors = [];
+page.on("pageerror", e => errors.push(e.message));
+page.on("console", e => { if (e.type() === "error") errors.push(e.text()); });
+try {
+  await page.addInitScript(() => { window.__MOVE_BODY_TEST__ = {}; });
+  await page.goto(base);
+  await page.getByLabel("Email", { exact: true }).fill("janedoe@gmail.com");
+  await page.getByLabel("Password", { exact: true }).fill("123");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByText("Hello, Jane.", { exact: true }).waitFor();
+  const model = page.waitForResponse(r => r.url().endsWith("/body/human.glb") && r.ok());
+  await page.getByRole("tab", { name: /Plan/ }).click();
+  await model;
+  await page.waitForFunction(() => window.__MOVE_BODY_TEST__?.ready && window.__MOVE_BODY_TEST__?.camera);
+  const canvas = page.locator("canvas");
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
+  assert.ok(box);
+  await page.mouse.click(box.x + 8, box.y + 8);
+  await page.waitForTimeout(1500);
+  async function clickPoint(x, y, z = .12) {
+    await canvas.scrollIntoViewIfNeeded();
+    const live = await page.evaluate(() => window.__MOVE_BODY_TEST__.camera());
+    console.log("Live camera at click:", JSON.stringify(live.position), "(home: [0,1.15,3.6])");
+    const p = await page.evaluate(target => window.__MOVE_BODY_TEST__.project(target), [x, y, z]);
+    console.log("Visible body surface anchor:", JSON.stringify(p));
+    await page.mouse.click(p.x, p.y);
+  }
+  await clickPoint(.30, 1.56, -.10);
+  await expect(page.getByRole("button", { name: "Shoulders", exact: true })).toHaveAttribute("aria-pressed", "true");
+  assert.equal(await page.getByRole("button", { name: "Open Shoulder pendulum", exact: true }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "Open Supported sit-to-stand", exact: true }).count(), 0);
+  await page.screenshot({ path: "/home/ubuntu/work/shots/body-front.png", fullPage: true });
+  console.log("PASS model shoulder raycast selects Shoulders and filters the exercise list");
+  await clickPoint(.12, .72);
+  await expect(page.getByRole("button", { name: "Legs", exact: true })).toHaveAttribute("aria-pressed", "true");
+  assert.equal(await page.getByRole("button", { name: "Open Supported sit-to-stand", exact: true }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "Open Wall angels", exact: true }).count(), 0);
+  console.log("PASS model thigh raycast selects Legs and filters the exercise list");
+  await page.getByRole("button", { name: "Upper back", exact: true }).click();
+  await canvas.scrollIntoViewIfNeeded();
+  const turn = box.height / 1.2;
+  await page.mouse.move(box.x + box.width / 2 - turn / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + turn / 2, box.y + box.height / 2, { steps: 25 });
+  await page.mouse.up();
+  await page.waitForTimeout(1800);
+  await page.screenshot({ path: "/home/ubuntu/work/shots/body-back.png", fullPage: true });
+  await expect(page.getByRole("button", { name: "Upper back", exact: true })).toHaveAttribute("aria-pressed", "true");
+  assert.equal(await page.getByRole("button", { name: "Open Seated band row", exact: true }).count(), 1);
+  console.log("PASS accessible chip selection syncs the model; drag rotates to the back");
+  assert.deepEqual(errors, []);
+  console.log("PASS no browser runtime or console errors");
+} catch (error) {
+  await page.screenshot({ path: "/home/ubuntu/work/shots/body-failure.png", fullPage: true });
+  console.error("Browser errors:", errors);
+  console.error("Region state:", await page.getByRole("button").evaluateAll(items => items.filter(e => e.hasAttribute("aria-pressed")).map(e => [e.textContent, e.getAttribute("aria-pressed")])));
+  throw error;
+} finally { await browser.close(); }

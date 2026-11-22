@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "MoveCompass",
+    "slug": "movecompass",
+    "owner": "abdulfaisal1028",
+    "version": "1.0.0",
+    "runtimeVersion": { "policy": "sdkVersion" },
+    "updates": { "url": "https://u.expo.dev/dfee2456-20bc-4ce2-b0e4-885eb54b0e0f" },
+    "scheme": "movecompass",
+    "icon": "./assets/icon.png",
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      "expo-image",
+      "expo-status-bar",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MoveCompass to guide your exercise on this device.",
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ca.cccare.movecompass"
+    },
+    "android": {
+      "package": "ca.cccare.movecompass",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "dfee2456-20bc-4ce2-b0e4-885eb54b0e0f"
+      }
+    }
+  }
+}

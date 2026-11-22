@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: movecompass
+    runtime: docker
+    plan: free
+    branch: devin/1763669000-movecompass-v2
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATA_DIR
+        value: /tmp/movecompass-data
+      - key: WEB_DIST
+        value: /workspace/app/dist
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DEMO_PATIENT_PASSWORD
+        generateValue: true
+      - key: DEMO_STAFF_PASSWORD
+        generateValue: true
+      - key: DEVICE_PAIRING_SECRET
+        generateValue: true
+      - key: ALLOW_UNREGISTERED_DEVICES
+        value: "false"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DEMO_EPHEMERAL
+        value: "1"

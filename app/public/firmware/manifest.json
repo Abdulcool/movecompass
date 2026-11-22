@@ -1,0 +1,16 @@
+{
+  "name": "MoveCompass patient notifier",
+  "version": "0.2.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP8266",
+      "parts": [
+        {
+          "path": "movecompass-esp8266.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
