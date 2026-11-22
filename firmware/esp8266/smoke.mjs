@@ -65,7 +65,8 @@ try {
   const disconnected=once(sim.events,'disconnected');sim.pause();await disconnected;
   const missed=[];
   const replayed=new Promise(resolve=>{sim.events.on('finished',event=>{missed.push(event.id);if(missed.length===2)resolve();});});
-  await api('/api/completions',jane.token,camera);await api('/api/completions',jane.token,camera);
+  const offline = { exerciseId: 'seated-row', exerciseName: 'Seated band row', reps: 10, source: 'camera', angles: { rightElbow: 80 } };
+  await api('/api/completions',jane.token,offline);await api('/api/completions',jane.token,offline);
   console.log('OFFLINE: two sets stored; reconnecting with last sequence');sim.resume();await replayed;
   assert.equal(new Set(missed).size,2);assert.equal(alerts,4);
   console.log('PASS disconnect → 2 completions → reconnect → 2 queued flash patterns, once per missed set');
