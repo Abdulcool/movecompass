@@ -13,7 +13,8 @@
 #endif
 
 WebSocketsClient socketClient;
-Ticker portalLed;
+Ticker portalLed, alertTicker;
+volatile uint8_t alertTicks = 40;
 String backendUrl, backendHost, deviceId, deviceKey, patientId, wifiSsid, wifiPassword;
 String credentialError;
 uint16_t backendPort = 80;
@@ -21,7 +22,7 @@ bool backendTls = false;
 bool wifiConnected = false, wifiAttempt = false, backendConnected = false;
 bool alerting = false, buttonRaw = false, buttonStable = false;
 uint32_t wifiStarted = 0, wifiRetryAt = 0, wifiBackoff = 1000;
-uint32_t socketBackoff = 1000, alertStarted = 0, buttonChanged = 0;
+uint32_t socketBackoff = 1000, buttonChanged = 0;
 String recentEvents[16];
 uint8_t recentIndex = 0;
 struct PendingAlert { String id; uint64_t seq; };
@@ -40,6 +41,17 @@ bool due(uint32_t now, uint32_t deadline) {
 void outputs(bool led, bool buzzer) {
   digitalWrite(LED_PIN, led ? LOW : HIGH);
   if (BUZZER_PIN >= 0) digitalWrite(BUZZER_PIN, buzzer ? HIGH : LOW);
+}
+
+void stopAlertPattern() {
+  alertTicks = 40; alertTicker.detach(); outputs(false, false);
+}
+
+void tickAlertPattern() {
+  if (alertTicks >= 40) return;
+  alertTicks++;
+  const bool on = alertTicks < 40 && (alertTicks >= 10 || alertTicks % 2 == 0);
+  outputs(on, on);
 }
 
 bool parseBackend() {
@@ -61,6 +73,25 @@ bool parseBackend() {
   if (!host.length()) return false;
   for (unsigned int i = 0; i < host.length(); i++) if (!isalnum(host[i]) && host[i] != '.' && host[i] != '-') return false;
   backendHost = host; return true;
+}
+
+bool healthRedirect(int status) {
+  return status == 301 || status == 302 || status == 307 || status == 308;
+}
+
+bool upgradeBackendToHttps(const String &location) {
+  if (backendTls || !location.startsWith("https://") || location.length() > 512) return false;
+  String host = backendHost; host.toLowerCase();
+  IPAddress address;
+  if (address.fromString(host) || host.indexOf('.') < 0 || host.endsWith(".local") || host.endsWith(".localhost") ||
+    host.endsWith(".lan") || host.endsWith(".home") || host.endsWith(".home.arpa") || host.endsWith(".internal")) return false;
+  String authority = location.substring(8);
+  const int slash = authority.indexOf('/');
+  if (slash >= 0) authority.remove(slash);
+  authority.toLowerCase();
+  if (authority != host && authority != host + ":443") return false;
+  backendUrl = "https://" + host;
+  return parseBackend();
 }
 
 bool validDeviceKey(const String &key) {
@@ -95,6 +126,41 @@ bool saveConfig() {
   return written == expected && LittleFS.rename("/config.tmp", "/config.json");
 }
 
+struct CredentialDiagnostics {
+  uint32_t heap, maxBlock;
+  int status, tlsError;
+  char tlsText[160];
+};
+
+CredentialDiagnostics credentialDiagnostics(int status, BearSSL::WiFiClientSecure &secure);
+void credentialFailure(const char *method, const char *path, const char *reason, const CredentialDiagnostics &diagnostic);
+
+CredentialDiagnostics credentialDiagnostics(int status, BearSSL::WiFiClientSecure &secure) {
+  CredentialDiagnostics result;
+  result.heap = ESP.getFreeHeap(); result.maxBlock = ESP.getMaxFreeBlockSize(); result.status = status;
+  result.tlsError = backendTls ? secure.getLastSSLError(result.tlsText, sizeof(result.tlsText)) : 0;
+  if (!backendTls) strlcpy(result.tlsText, "not HTTPS", sizeof(result.tlsText));
+  return result;
+}
+
+void credentialFailure(const char *method, const char *path, const char *reason, const CredentialDiagnostics &diagnostic) {
+  const String httpError = HTTPClient::errorToString(diagnostic.status);
+  const char *httpText = httpError.length() ? httpError.c_str() : "response";
+  Serial.printf("%s %s: %s; HTTP=%d (%s) TLS=%d (%s) heap=%u max=%u\n", method, path, reason,
+    diagnostic.status, httpText, diagnostic.tlsError, diagnostic.tlsText, diagnostic.heap, diagnostic.maxBlock);
+  char summary[256];
+  snprintf(summary, sizeof(summary), "%s %s HTTP=%d (%s) TLS=%d (%.80s) heap=%u max=%u",
+    method, path, diagnostic.status, httpText, diagnostic.tlsError, diagnostic.tlsText, diagnostic.heap, diagnostic.maxBlock);
+  credentialError = String(reason) + " " + summary;
+}
+
+String portalErrorHtml() {
+  String text = credentialError;
+  text.replace("&", "&amp;"); text.replace("<", "&lt;"); text.replace(">", "&gt;");
+  text.replace("\"", "&quot;"); text.replace("'", "&#39;");
+  return text.length() ? "<p role='alert'>Last setup attempt: " + text + "</p>" : "";
+}
+
 bool wakeBackend() {
   const uint32_t started = millis();
   uint32_t backoff = 1000;
@@ -103,21 +169,37 @@ bool wakeBackend() {
     if (attemptElapsed >= 90000) break;
     if (WiFi.status() != WL_CONNECTED) { credentialError = "WiFi disconnected. Check the WiFi password and signal."; return false; }
     const uint32_t remaining = 90000 - attemptElapsed;
-    WiFiClient plain; BearSSL::WiFiClientSecure secure;
-    secure.setInsecure();
-    WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
-    client.setTimeout(min(remaining, static_cast<uint32_t>(10000)));
-    HTTPClient http; http.setTimeout(min(remaining, static_cast<uint32_t>(10000)));
     int status = -1;
-    if (http.begin(client, backendUrl + "/healthz")) status = http.GET();
-    http.end(); yield();
+    String location;
+    {
+      Serial.printf("GET /healthz starting; heap=%u max=%u\n", ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+      WiFiClient plain; BearSSL::WiFiClientSecure secure;
+      secure.setInsecure();
+      secure.setBufferSizes(16384, 512);
+      WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
+      client.setTimeout(min(remaining, static_cast<uint32_t>(10000)));
+      HTTPClient http; http.setTimeout(min(remaining, static_cast<uint32_t>(10000)));
+      if (http.begin(client, backendUrl + "/healthz")) {
+        const char *headers[] = {"Location"}; http.collectHeaders(headers, 1);
+        status = http.GET();
+        if (healthRedirect(status)) location = http.header("Location");
+      }
+      if (status != 200) credentialFailure("GET", "/healthz", healthRedirect(status) ? "Server redirected health check; use https:// if upgrade fails." : "Server health check failed.", credentialDiagnostics(status, secure));
+      http.end();
+    }
+    yield();
     if (status == 200) return true;
+    if (healthRedirect(status) && upgradeBackendToHttps(location)) {
+      Serial.println("Health redirect: upgraded same-host backend to HTTPS; retrying health check, not sending a code yet.");
+      continue;
+    }
     const uint32_t elapsed = millis() - started;
     if (elapsed >= 90000) break;
     delay(min(backoff, 90000 - elapsed));
     backoff = min(backoff * 2, static_cast<uint32_t>(8000));
   }
-  credentialError = "Server did not wake within 90 seconds. Check the server address and try again; no pairing code was sent.";
+  credentialError = "Server did not wake within 90 seconds; no pairing code sent. " + credentialError;
+  Serial.println(credentialError);
   return false;
 }
 
@@ -125,29 +207,42 @@ int credentialRequest(const char *path, const String &body) {
   credentialError = "";
   if (!parseBackend()) { credentialError = "Use a valid http:// or https:// server address without a path."; return -1; }
   Ticker waitingLed;
-  waitingLed.attach_ms(1000, []() { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); });
-  Serial.println("Waking server; allow up to 90 seconds (slow blink)");
+  waitingLed.attach_ms(1000, []() { if (alertTicks >= 40) digitalWrite(LED_PIN, !digitalRead(LED_PIN)); });
+  Serial.printf("Waking server for %s; allow up to 90 seconds (slow blink)\n", path);
   if (!wakeBackend()) return -1;
-  WiFiClient plain; BearSSL::WiFiClientSecure secure;
-  secure.setInsecure();
-  WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
-  client.setTimeout(15000);
-  HTTPClient http; http.setTimeout(15000);
-  if (!http.begin(client, backendUrl + path)) { credentialError = "Could not open the server connection. Request a fresh pairing code before retrying."; return -1; }
-  http.addHeader("Content-Type", "application/json");
-  const int status = http.POST(body);
-  if (status != 200) {
-    credentialError = status < 0 ? "Server request failed or timed out. The code may have been used; request a fresh code before retrying." : "Server rejected the request (HTTP " + String(status) + "). Check the address and request a fresh pairing code.";
-    http.end(); return status;
+  String response;
+  CredentialDiagnostics diagnostic;
+  {
+    Serial.printf("POST %s starting; heap=%u max=%u\n", path, ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+    WiFiClient plain; BearSSL::WiFiClientSecure secure;
+    secure.setInsecure();
+    secure.setBufferSizes(16384, 512);
+    WiFiClient &client = backendTls ? static_cast<WiFiClient &>(secure) : plain;
+    client.setTimeout(15000);
+    HTTPClient http; http.setTimeout(15000);
+    int status = -1;
+    if (http.begin(client, backendUrl + path)) {
+      http.addHeader("Content-Type", "application/json");
+      status = http.POST(body);
+    }
+    if (status == 200) response = http.getString();
+    diagnostic = credentialDiagnostics(status, secure);
+    if (status != 200) {
+      credentialFailure("POST", path, "Request failed; a pairing code may have been used. Request a fresh code before retrying pairing.", diagnostic);
+      http.end(); return status;
+    }
+    http.end();
   }
-  const String response = http.getString(); http.end();
-  credentialError = "Invalid server response. The code may have been used; request a fresh pairing code.";
-  if (response.length() > 2048) return -1;
   JsonDocument doc;
-  if (deserializeJson(doc, response)) return -1;
+  if (response.length() > 2048 || deserializeJson(doc, response)) {
+    credentialFailure("POST", path, "Invalid response; request a fresh pairing code.", diagnostic); return -1;
+  }
   const String nextId = doc["deviceId"] | "", nextKey = doc["key"] | "", nextPatient = doc["patientId"] | "";
-  if (!nextId.length() || !validDeviceKey(nextKey) || !nextPatient.length()) return -1;
+  if (!nextId.length() || !validDeviceKey(nextKey) || !nextPatient.length()) {
+    credentialFailure("POST", path, "Invalid credentials in response; request a fresh pairing code.", diagnostic); return -1;
+  }
   if (patientId.length() && patientId != nextPatient) {
+    stopAlertPattern();
     lastSeq = 0; hasCursor = false; alerting = false; alertCount = 0; alertHead = 0; activeId = ""; activeSeq = 0;
     for (String &id : recentEvents) id = "";
     LittleFS.remove("/cursor.json"); outputs(false, false);
@@ -185,22 +280,33 @@ bool setupButtonHeld() {
 void configurePortal() {
   for (;;) {
     portalLed.attach_ms(100, []() { digitalWrite(LED_PIN, !digitalRead(LED_PIN)); });
-    const String previousBackend = backendUrl;
-    WiFiManager manager; manager.setDebugOutput(false); manager.setTitle("MoveCompass setup");
-    manager.setBreakAfterConfig(true); manager.setConnectTimeout(25);
-    WiFiManagerParameter server("backend", "MoveCompass server address", backendUrl.length() ? backendUrl.c_str() : DEFAULT_BACKEND_URL, 199);
-    WiFiManagerParameter code("code", "Six-digit pairing code (blank to keep current pairing)", "", 7, "inputmode='numeric' pattern='[0-9]{6}' maxlength='6'");
-    WiFiManagerParameter info("<p>Use your home 2.4 GHz WiFi. Copy the server address and pairing code from your care team. Codes last 15 minutes. Demo TLS does not verify certificates.</p>");
-    const String failureHtml = credentialError.length() ? "<p role='alert'>Last setup attempt: " + credentialError + "</p>" : "";
-    WiFiManagerParameter failure(failureHtml.c_str());
-    manager.addParameter(&server); manager.addParameter(&code); manager.addParameter(&info);
-    if (failureHtml.length()) manager.addParameter(&failure);
-    Serial.println("Setup WiFi: MoveCompass-Setup; open http://192.168.4.1");
-    if (!manager.startConfigPortal("MoveCompass-Setup") || WiFi.status() != WL_CONNECTED) { credentialError = "Could not connect to WiFi. Check the password and use a 2.4 GHz network."; continue; }
+    String pairing;
+    bool connected = false, keep = false;
+    {
+      const String previousBackend = backendUrl;
+      WiFiManager manager; manager.setDebugOutput(false); manager.setTitle("MoveCompass setup");
+      manager.setBreakAfterConfig(true); manager.setConnectTimeout(25);
+      const String initialBackend = !backendUrl.length() || backendUrl == "http://movecompass.local:8080" ? DEFAULT_BACKEND_URL : backendUrl;
+      WiFiManagerParameter server("backend", "MoveCompass server address", initialBackend.c_str(), 199);
+      WiFiManagerParameter code("code", "Six-digit pairing code (blank to keep current pairing)", "", 7, "inputmode='numeric' pattern='[0-9]{6}' maxlength='6'");
+      WiFiManagerParameter info("<p>Use your home 2.4 GHz WiFi. Copy the server address and pairing code from your care team. Codes last 15 minutes. Demo TLS does not verify certificates.</p>");
+      const String failureHtml = portalErrorHtml();
+      WiFiManagerParameter failure(failureHtml.c_str());
+      manager.addParameter(&server); manager.addParameter(&code); manager.addParameter(&info);
+      if (failureHtml.length()) manager.addParameter(&failure);
+      Serial.println("Setup WiFi: MoveCompass-Setup; open http://192.168.4.1");
+      connected = manager.startConfigPortal("MoveCompass-Setup") && WiFi.status() == WL_CONNECTED;
+      if (connected) {
+        backendUrl = server.getValue(); pairing = code.getValue();
+        keep = !pairing.length() && validDeviceKey(deviceKey) && previousBackend == backendUrl;
+      }
+    }
     portalLed.detach();
-    backendUrl = server.getValue();
-    const String pairing = code.getValue();
-    const bool keep = !pairing.length() && validDeviceKey(deviceKey) && previousBackend == backendUrl;
+    WiFi.persistent(false); WiFi.softAPdisconnect(true);
+    if (!WiFi.mode(WIFI_STA) || WiFi.getMode() != WIFI_STA) { credentialError = "Could not switch off the setup access point. Restart the board and try again."; continue; }
+    yield();
+    if (!connected || WiFi.status() != WL_CONNECTED) { credentialError = "Could not connect to WiFi. Check the password and use a 2.4 GHz network."; continue; }
+    Serial.printf("Portal released; STA only; heap=%u max=%u\n", ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
     if (!parseBackend()) { credentialError = "Use a valid http:// or https:// server address without a path."; continue; }
     if (!keep && !pairDevice(pairing)) { Serial.println(credentialError); continue; }
     wifiSsid = WiFi.SSID(); wifiPassword = WiFi.psk();
@@ -236,11 +342,13 @@ void nextAlert() {
   if (alerting || !alertCount) return;
   activeId = alerts[alertHead].id; activeSeq = alerts[alertHead].seq;
   alerts[alertHead].id = ""; alertHead = (alertHead + 1) % 16; alertCount--;
+  alerting = true; alertTicks = 0; outputs(true, true);
+  alertTicker.attach_ms(100, tickAlertPattern);
   Serial.println("FLASH: 5 x (100ms ON / 100ms OFF), then ON 3000ms");
-  alertStarted = millis(); alerting = true;
 }
 
 void finishAlert() {
+  stopAlertPattern();
   alerting = false;
   recentEvents[recentIndex] = activeId; recentIndex = (recentIndex + 1) % 16;
   deliveryAck(activeSeq); activeId = ""; activeSeq = 0;
@@ -267,8 +375,8 @@ void completion(uint8_t *payload, size_t length) {
   for (const String &seen : recentEvents) if (seen == id) { deliveryAck(seq); return; }
   if (alertCount >= 16) { socketClient.disconnect(); return; }
   alerts[(alertHead + alertCount) % 16] = {String(id), seq}; alertCount++;
-  Serial.print("EVENT "); serializeJson(event, Serial); Serial.println();
   nextAlert();
+  Serial.print("EVENT "); serializeJson(event, Serial); Serial.println();
 }
 
 void socketEvent(WStype_t type, uint8_t *payload, size_t length) {
@@ -313,7 +421,7 @@ void updateWifi(uint32_t now) {
       const int status = credentialRequest("/api/devices/recover", body);
       if (status == 200) { saveConfig(); credentialsReady = true; credentialBackoff = 1000; startBackend(); }
       else if (status == 401 || status == 403) { Serial.println("Pairing lost: ask staff to recreate the account, then pair again"); configurePortal(); credentialRetryAt = millis(); }
-      else { credentialRetryAt = millis() + credentialBackoff; credentialBackoff = min(credentialBackoff * 2, static_cast<uint32_t>(60000)); Serial.println("Server sleeping or unavailable; will keep retrying"); }
+      else { credentialRetryAt = millis() + credentialBackoff; credentialBackoff = min(credentialBackoff * 2, static_cast<uint32_t>(60000)); Serial.println(credentialError); Serial.println("Server sleeping or unavailable; will keep retrying recovery"); }
       return;
     }
     socketClient.loop();
@@ -346,11 +454,7 @@ void updateAlert(uint32_t now) {
     }
   }
   if (alerting) {
-    const uint32_t elapsed = now - alertStarted;
-    if (elapsed < 4000) {
-      const bool on = elapsed >= 1000 || elapsed % 200 < 100;
-      outputs(on, on); return;
-    }
+    if (alertTicks < 40) return;
     Serial.println("Alert finished"); finishAlert();
     if (alerting) return;
   }
